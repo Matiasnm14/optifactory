@@ -11,4 +11,11 @@
 
     <artifactId>core</artifactId>
 
+    <dependencies>
+        <dependency>
+            <groupId>edu.upb</groupId>
+            <artifactId>data</artifactId>
+        </dependency>
+    </dependencies>
+
 </project>

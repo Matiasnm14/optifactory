@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+#.mds del propyecto
+db.md
+ESTRUCTURA_PROYECTO.md
