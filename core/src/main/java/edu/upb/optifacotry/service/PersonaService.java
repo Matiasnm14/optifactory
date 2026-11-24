@@ -21,8 +21,8 @@ public class PersonaService extends CrudService<Persona, PersonaRequestDto, Pers
 
     @Override
     protected void applyRequest(PersonaRequestDto request, Persona entity) {
-        entity.setIdentificacion(request.identificacion());
-        entity.setNombre(request.nombre());
+        entity.setIdentificacion(request.identificacion().strip());
+        entity.setNombre(request.nombre().strip());
         entity.setUsuario(reference(Usuario.class, request.usuarioId()));
         entity.setActivo(request.activo());
     }

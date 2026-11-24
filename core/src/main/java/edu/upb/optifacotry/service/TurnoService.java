@@ -4,7 +4,11 @@ import edu.upb.optifacotry.repository.dto.request.TurnoRequestDto;
 import edu.upb.optifacotry.repository.dto.response.TurnoResponseDto;
 import edu.upb.optifacotry.repository.entity.Turno;
 import edu.upb.optifacotry.repository.repos.TurnoRepository;
+import edu.upb.optifacotry.service.exception.InvalidRequestException;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class TurnoService extends CrudService<Turno, TurnoRequestDto, TurnoResponseDto> {
@@ -20,9 +24,15 @@ public class TurnoService extends CrudService<Turno, TurnoRequestDto, TurnoRespo
 
     @Override
     protected void applyRequest(TurnoRequestDto request, Turno entity) {
-        entity.setNombre(request.nombre());
-        entity.setInicio(request.inicio());
-        entity.setFin(request.fin());
+        LocalTime inicio = request.inicio().truncatedTo(ChronoUnit.MICROS);
+        LocalTime fin = request.fin().truncatedTo(ChronoUnit.MICROS);
+        if (inicio.equals(fin)) {
+            throw new InvalidRequestException("El inicio y el fin del turno deben ser distintos.");
+        }
+
+        entity.setNombre(request.nombre().strip());
+        entity.setInicio(inicio);
+        entity.setFin(fin);
     }
 
     @Override

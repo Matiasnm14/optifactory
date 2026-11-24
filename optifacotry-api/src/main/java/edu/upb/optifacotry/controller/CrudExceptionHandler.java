@@ -1,5 +1,7 @@
 package edu.upb.optifacotry.controller;
 
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import edu.upb.optifacotry.service.exception.InvalidRequestException;
 import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -14,6 +16,16 @@ import java.sql.SQLException;
 
 @RestControllerAdvice
 public class CrudExceptionHandler {
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    ProblemDetail forbidden(ForbiddenOperationException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    ProblemDetail invalidRequest(InvalidRequestException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     ProblemDetail notFound(ResourceNotFoundException exception) {

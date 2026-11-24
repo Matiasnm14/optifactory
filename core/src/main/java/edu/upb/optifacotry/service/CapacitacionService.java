@@ -20,8 +20,8 @@ public class CapacitacionService extends CrudService<Capacitacion, CapacitacionR
 
     @Override
     protected void applyRequest(CapacitacionRequestDto request, Capacitacion entity) {
-        entity.setCodigo(request.codigo());
-        entity.setNombre(request.nombre());
+        entity.setCodigo(request.codigo().strip());
+        entity.setNombre(request.nombre().strip());
         entity.setDescripcion(request.descripcion());
         entity.setActivo(request.activo());
     }
