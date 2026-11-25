@@ -9,7 +9,6 @@ public record MaquinaResponseDto(
     UUID fuenteId,
     String nombre,
     String ubicacion,
-    String caracteristicas,
     String identificadorExterno,
     Boolean activo
 ) {

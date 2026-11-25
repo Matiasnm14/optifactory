@@ -27,7 +27,6 @@ public class MaquinaService extends CrudService<Maquina, MaquinaRequestDto, Maqu
         entity.setFuente(reference(FuenteIntegracion.class, request.fuenteId()));
         entity.setNombre(request.nombre());
         entity.setUbicacion(request.ubicacion());
-        entity.setCaracteristicas(request.caracteristicas());
         entity.setIdentificadorExterno(request.identificadorExterno());
         entity.setActivo(request.activo());
     }
@@ -41,7 +40,6 @@ public class MaquinaService extends CrudService<Maquina, MaquinaRequestDto, Maqu
             referenceId(entity.getFuente()),
             entity.getNombre(),
             entity.getUbicacion(),
-            entity.getCaracteristicas(),
             entity.getIdentificadorExterno(),
             entity.getActivo()
         );

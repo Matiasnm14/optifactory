@@ -17,6 +17,7 @@ import lombok.Setter;
 @Table(name = "maquinas")
 public class Maquina extends BaseEntity {
 
+    //UUID COMO FORMATO DE ID ÚNICO
     @Column(name = "codigo", columnDefinition = "text", unique = true)
     private String codigo;
 
@@ -34,9 +35,6 @@ public class Maquina extends BaseEntity {
 
     @Column(name = "ubicacion", columnDefinition = "text")
     private String ubicacion;
-
-    @Column(name = "caracteristicas", columnDefinition = "text")
-    private String caracteristicas;
 
     @Column(name = "identificador_externo", columnDefinition = "text")
     private String identificadorExterno;
