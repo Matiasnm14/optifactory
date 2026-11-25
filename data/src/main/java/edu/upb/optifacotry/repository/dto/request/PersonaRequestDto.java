@@ -1,11 +1,15 @@
 package edu.upb.optifacotry.repository.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
 import java.util.UUID;
 
 public record PersonaRequestDto(
-    String identificacion,
-    String nombre,
+    @NotBlank String identificacion,
+    @NotBlank String nombre,
     UUID usuarioId,
-    Boolean activo
+    @NotNull Boolean activo,
+    UUID areaId
 ) {
 }

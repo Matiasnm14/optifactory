@@ -1,40 +1,27 @@
 package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.entity.BaseEntity;
-import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
-@Transactional(readOnly = true)
-public abstract class CrudService<E extends BaseEntity, Q, R> {
+import static edu.upb.optifacotry.service.AccionPermiso.CREAR;
+import static edu.upb.optifacotry.service.AccionPermiso.ELIMINAR;
+import static edu.upb.optifacotry.service.AccionPermiso.MODIFICAR;
 
-    private final JpaRepository<E, UUID> repository;
-
-    @PersistenceContext
-    private EntityManager entityManager;
+public abstract class CrudService<E extends BaseEntity, Q, R> extends ReadOnlyCrudService<E, R> {
 
     protected CrudService(JpaRepository<E, UUID> repository) {
-        this.repository = repository;
-    }
-
-    public Page<R> findAll(Pageable pageable) {
-        return repository.findAll(pageable).map(this::toResponse);
-    }
-
-    public R findById(UUID id) {
-        return toResponse(findEntity(id));
+        super(repository);
     }
 
     @Transactional
     public R create(Q request) {
+        PermisosService.Actor actor = actorActual();
+        AlcancePermiso permiso = acceso(CREAR, actor);
         E entity = newEntity();
-        applyRequest(request, entity);
+        prepararEscritura(request, entity, permiso, actor);
         E saved = repository.saveAndFlush(entity);
         entityManager.refresh(saved);
         return toResponse(saved);
@@ -42,8 +29,11 @@ public abstract class CrudService<E extends BaseEntity, Q, R> {
 
     @Transactional
     public R update(UUID id, Q request) {
-        E entity = findEntity(id);
-        applyRequest(request, entity);
+        PermisosService.Actor actor = actorActual();
+        AlcancePermiso permiso = acceso(MODIFICAR, actor);
+        E entity = findEntityForUpdate(id);
+        permiso.verificar(entity);
+        prepararEscritura(request, entity, permiso, actor);
         repository.flush();
         entityManager.refresh(entity);
         return toResponse(entity);
@@ -51,26 +41,24 @@ public abstract class CrudService<E extends BaseEntity, Q, R> {
 
     @Transactional
     public void delete(UUID id) {
-        repository.delete(findEntity(id));
+        AlcancePermiso permiso = acceso(ELIMINAR);
+        E entity = findEntityForUpdate(id);
+        permiso.verificar(entity);
+        repository.delete(entity);
         repository.flush();
-    }
-
-    protected <T extends BaseEntity> T reference(Class<T> type, UUID id) {
-        return id == null ? null : entityManager.getReference(type, id);
-    }
-
-    protected UUID referenceId(BaseEntity entity) {
-        return entity == null ? null
-                : (UUID) entityManager.getEntityManagerFactory().getPersistenceUnitUtil().getIdentifier(entity);
     }
 
     protected abstract E newEntity();
 
     protected abstract void applyRequest(Q request, E entity);
 
-    protected abstract R toResponse(E entity);
+    // Las validaciones sobre otras entidades pueden ejecutarse una vez autorizado el alcance.
+    protected void completarEscritura(Q request, E entity, PermisosService.Actor actor) {
+    }
 
-    private E findEntity(UUID id) {
-        return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException(id));
+    private void prepararEscritura(Q request, E entity, AlcancePermiso permiso, PermisosService.Actor actor) {
+        applyRequest(request, entity);
+        permiso.verificar(entity);
+        completarEscritura(request, entity, actor);
     }
 }

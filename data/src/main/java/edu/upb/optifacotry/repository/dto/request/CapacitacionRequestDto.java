@@ -1,9 +1,12 @@
 package edu.upb.optifacotry.repository.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
 public record CapacitacionRequestDto(
-    String codigo,
-    String nombre,
+    @NotBlank String codigo,
+    @NotBlank String nombre,
     String descripcion,
-    Boolean activo
+    @NotNull Boolean activo
 ) {
 }

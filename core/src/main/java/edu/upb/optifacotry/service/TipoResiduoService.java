@@ -20,9 +20,9 @@ public class TipoResiduoService extends CrudService<TipoResiduo, TipoResiduoRequ
 
     @Override
     protected void applyRequest(TipoResiduoRequestDto request, TipoResiduo entity) {
-        entity.setCodigo(request.codigo());
-        entity.setNombre(request.nombre());
-        entity.setUnidad(request.unidad());
+        entity.setCodigo(request.codigo().strip());
+        entity.setNombre(request.nombre().strip());
+        entity.setUnidad(request.unidad().strip());
         entity.setActivo(request.activo());
     }
 

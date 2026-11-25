@@ -1,19 +1,81 @@
 package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.RegistroConsumoRequestDto;
+import edu.upb.optifacotry.repository.dto.response.ConsultaConsumoResponseDto;
 import edu.upb.optifacotry.repository.dto.response.RegistroConsumoResponseDto;
+import edu.upb.optifacotry.repository.dto.response.TotalConsumoResponseDto;
 import edu.upb.optifacotry.repository.entity.Area;
 import edu.upb.optifacotry.repository.entity.RecursoAmbiental;
 import edu.upb.optifacotry.repository.entity.RegistroConsumo;
-import edu.upb.optifacotry.repository.entity.Usuario;
+import edu.upb.optifacotry.repository.repos.RecursoAmbientalRepository;
 import edu.upb.optifacotry.repository.repos.RegistroConsumoRepository;
+import edu.upb.optifacotry.repository.repos.ResumenRegistroConsumoRepository.GrupoConsumo;
+import edu.upb.optifacotry.service.exception.InvalidRequestException;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+
+import static edu.upb.optifacotry.service.AccionPermiso.CONSULTAR;
 
 @Service
 public class RegistroConsumoService extends CrudService<RegistroConsumo, RegistroConsumoRequestDto, RegistroConsumoResponseDto> {
 
-    public RegistroConsumoService(RegistroConsumoRepository repository) {
+    private final RecursoAmbientalRepository recursos;
+    private final RegistroConsumoRepository registros;
+
+    public RegistroConsumoService(RegistroConsumoRepository repository, RecursoAmbientalRepository recursos) {
         super(repository);
+        this.registros = repository;
+        this.recursos = recursos;
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ConsultaConsumoResponseDto consultar(UUID recursoId, UUID areaId, Instant desde, Instant hasta,
+                                               Pageable pageable) {
+        IntervaloConsulta intervalo = new IntervaloConsulta(desde, hasta);
+        Instant inicio = intervalo.desdeInclusivo();
+        Instant fin = intervalo.hastaInclusivo();
+        Specification<RegistroConsumo> filtro = acceso(CONSULTAR).<RegistroConsumo>filtro()
+                .and((raiz, consulta, criterios) -> {
+                    List<Predicate> filtros = new ArrayList<>();
+                    if (recursoId != null) {
+                        filtros.add(criterios.equal(raiz.get("recurso").get("id"), recursoId));
+                    }
+                    if (areaId != null) {
+                        filtros.add(criterios.equal(raiz.get("area").get("id"), areaId));
+                    }
+                    if (inicio != null) {
+                        filtros.add(criterios.greaterThanOrEqualTo(raiz.get("periodoInicio"), inicio));
+                    }
+                    if (fin != null) {
+                        filtros.add(criterios.lessThanOrEqualTo(raiz.get("periodoFin"), fin));
+                    }
+                    return criterios.and(filtros);
+                });
+        var pagina = consultas().findAll(filtro, pageable).map(this::toResponse);
+        Map<UUID, AcumuladorConsumo> porRecurso = new LinkedHashMap<>();
+        for (GrupoConsumo grupo : registros.agrupar(filtro)) {
+            porRecurso.computeIfAbsent(grupo.recursoId(), id -> new AcumuladorConsumo(id, grupo.unidadBase()))
+                    .acumular(grupo);
+        }
+        return new ConsultaConsumoResponseDto(new PagedModel<>(pagina),
+                porRecurso.values().stream().map(AcumuladorConsumo::resultado).toList());
     }
 
     @Override
@@ -23,15 +85,33 @@ public class RegistroConsumoService extends CrudService<RegistroConsumo, Registr
 
     @Override
     protected void applyRequest(RegistroConsumoRequestDto request, RegistroConsumo entity) {
-        entity.setRecurso(reference(RecursoAmbiental.class, request.recursoId()));
         entity.setArea(reference(Area.class, request.areaId()));
         entity.setCantidad(request.cantidad());
-        entity.setUnidad(request.unidad());
-        entity.setPeriodoInicio(request.periodoInicio());
-        entity.setPeriodoFin(request.periodoFin());
-        entity.setTipoDato(request.tipoDato());
-        entity.setFuente(request.fuente());
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
+        entity.setUnidad(request.unidad().strip());
+        entity.setPeriodoInicio(request.periodoInicio().truncatedTo(ChronoUnit.MICROS));
+        entity.setPeriodoFin(request.periodoFin().truncatedTo(ChronoUnit.MICROS));
+        entity.setFuente(request.fuente().strip());
+    }
+
+    @Override
+    protected void completarEscritura(RegistroConsumoRequestDto request, RegistroConsumo entity,
+                                      PermisosService.Actor actor) {
+        if (!entity.getPeriodoFin().isAfter(entity.getPeriodoInicio())) {
+            throw new InvalidRequestException("El fin del período debe ser posterior al inicio.");
+        }
+        RecursoAmbiental recurso = recursos.findLockedById(request.recursoId())
+                .orElseThrow(() -> new ResourceNotFoundException(request.recursoId()));
+        if (!Boolean.TRUE.equals(recurso.getActivo())) {
+            throw new InvalidRequestException("El recurso ambiental debe estar activo.");
+        }
+        if (!RecursoAmbientalService.aceptaUnidad(recurso.getUnidad(), entity.getUnidad())) {
+            throw new InvalidRequestException("La unidad no es compatible con el recurso ambiental.");
+        }
+        entity.setRecurso(recurso);
+        entity.setTipoDato(TipoDatoAmbiental.normalizar(request.tipoDato()));
+        if (entity.getId() == null) {
+            entity.setResponsable(actor.usuario());
+        }
     }
 
     @Override
@@ -48,5 +128,44 @@ public class RegistroConsumoService extends CrudService<RegistroConsumo, Registr
             entity.getFuente(),
             referenceId(entity.getResponsable())
         );
+    }
+
+    private static class AcumuladorConsumo {
+
+        private static final String MEDIDO = TipoDatoAmbiental.MEDIDO.name();
+        private static final String ESTIMADO = TipoDatoAmbiental.ESTIMADO.name();
+        private static final String SIN_CLASIFICAR = "SIN_CLASIFICAR";
+
+        private final UUID recursoId;
+        private final String unidadBase;
+        private final Map<String, BigDecimal> factores;
+        private final Map<String, BigDecimal> totales = new HashMap<>();
+        private long incluidos;
+        private long excluidos;
+
+        AcumuladorConsumo(UUID recursoId, String unidadBase) {
+            this.recursoId = recursoId;
+            this.unidadBase = unidadBase;
+            this.factores = RecursoAmbientalService.factoresConversion(unidadBase);
+        }
+
+        void acumular(GrupoConsumo grupo) {
+            BigDecimal factor = grupo.unidad() == null ? null : factores.get(grupo.unidad());
+            if (factor == null || grupo.cantidad() == null) {
+                excluidos += grupo.registros();
+                return;
+            }
+            incluidos += grupo.cantidadesValidas();
+            excluidos += grupo.registros() - grupo.cantidadesValidas();
+            String tipo = grupo.tipoDato() == null ? SIN_CLASIFICAR : grupo.tipoDato().strip().toUpperCase(Locale.ROOT);
+            String categoria = MEDIDO.equals(tipo) || ESTIMADO.equals(tipo) ? tipo : SIN_CLASIFICAR;
+            totales.merge(categoria, grupo.cantidad().multiply(factor), BigDecimal::add);
+        }
+
+        TotalConsumoResponseDto resultado() {
+            BigDecimal total = totales.values().stream().reduce(BigDecimal::add).orElse(null);
+            return new TotalConsumoResponseDto(recursoId, unidadBase, total, totales.get(MEDIDO), totales.get(ESTIMADO),
+                    totales.get(SIN_CLASIFICAR), incluidos, excluidos);
+        }
     }
 }
