@@ -64,7 +64,7 @@ public abstract class ReadOnlyCrudService<E extends BaseEntity, R> {
         return permisos.actorActual();
     }
 
-    private SimpleJpaRepository<E, UUID> consultas() {
+    protected SimpleJpaRepository<E, UUID> consultas() {
         return new SimpleJpaRepository<>(tipo, entityManager);
     }
 

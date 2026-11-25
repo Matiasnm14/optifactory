@@ -29,15 +29,18 @@ public class RecursoAmbientalService extends CrudService<RecursoAmbiental, Recur
 
     public UnidadesRecursoResponseDto consultarUnidades(UUID id) {
         String unidad = findById(id).unidad();
+        return new UnidadesRecursoResponseDto(unidad, factoresConversion(unidad));
+    }
+
+    static Map<String, BigDecimal> factoresConversion(String unidad) {
         Map<String, Integer> escalas = escalasCompatibles(unidad);
         if (escalas.isEmpty()) {
-            return new UnidadesRecursoResponseDto(unidad, Map.of());
+            return Map.of();
         }
         int exponenteBase = escalas.get(unidad);
-        Map<String, BigDecimal> factores = escalas.entrySet().stream()
+        return escalas.entrySet().stream()
                 .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey,
                         escala -> BigDecimal.ONE.scaleByPowerOfTen(escala.getValue() - exponenteBase)));
-        return new UnidadesRecursoResponseDto(unidad, factores);
     }
 
     static boolean aceptaUnidad(String unidadBase, String unidadRecibida) {

@@ -26,6 +26,10 @@ public class Persona extends BaseEntity {
     @JoinColumn(name = "usuario_id", foreignKey = @ForeignKey(name = "fk_personas_usuario_id"))
     private Usuario usuario;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "area_id", foreignKey = @ForeignKey(name = "fk_personas_area_id"))
+    private Area area;
+
     @Column(name = "activo")
     private Boolean activo;
 }

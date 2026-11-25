@@ -7,6 +7,7 @@ public record PersonaResponseDto(
     String identificacion,
     String nombre,
     UUID usuarioId,
-    Boolean activo
+    Boolean activo,
+    UUID areaId
 ) {
 }

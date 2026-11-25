@@ -169,6 +169,70 @@ class OptifacotryApplicationTests {
 	}
 
 	@Test
+	void limitaPersonasPeriodosYCapacitacionesAlAreaAsignada() throws Exception {
+		String area = altaArea("Personal local");
+		String externa = altaArea("Personal externo");
+		RequestPostProcessor personal = usuarioDeArea("personal-local", area, "PERSONAL");
+		RequestPostProcessor otroPersonal = usuarioDeArea("personal-externo", externa, "PERSONAL");
+		RequestPostProcessor supervisor = usuarioDeArea("supervisor-personal", area, "SUPERVISION_PRODUCCION");
+		String datos = """
+				{"identificacion":"%s","nombre":"Persona sin cuenta","activo":true,"areaId":"%s"}
+				""";
+		JsonNode propia = altaComo("personas", datos.formatted("PERSONA-LOCAL", area), personal);
+		String id = propia.path("id").asText();
+		assertThat(propia.path("usuarioId").isNull()).isTrue();
+		assertThat(propia.path("areaId").asText()).isEqualTo(area);
+		String ajena = altaComo("personas", datos.formatted("PERSONA-AJENA", externa), otroPersonal).path("id").asText();
+		mvc.perform(get("/api/v1/personas").with(supervisor).param("size", "1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.page.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].id").value(id));
+		mvc.perform(get("/api/v1/personas/{id}", ajena).with(personal)).andExpect(status().isNotFound());
+		enviarAlta("personas", datos.formatted("NO-AUTORIZADA", area), supervisor).andExpect(status().isForbidden());
+		mvc.perform(put("/api/v1/personas/{id}", id).with(personal).with(csrf())
+						.contentType(MediaType.APPLICATION_JSON).content(datos.formatted("PERSONA-LOCAL", externa)))
+				.andExpect(status().isForbidden());
+		enviarAlta("personas", """
+				{"identificacion":"SIN-AREA","nombre":"Sin clasificación","activo":true}
+				""", personal).andExpect(status().isBadRequest());
+
+		String periodo = """
+				{"personaId":"%s","tipo":"AUSENCIA","inicio":"2026-11-23T08:00:00Z","fin":"2026-11-23T10:00:00Z"}
+				""";
+		altaComo("periodos-personal", periodo.formatted(id), personal);
+		String periodoAjeno = altaComo("periodos-personal", periodo.formatted(ajena), otroPersonal).path("id").asText();
+		mvc.perform(get("/api/v1/periodos-personal").with(supervisor).param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(1));
+		mvc.perform(get("/api/v1/periodos-personal/{id}", periodoAjeno).with(supervisor))
+				.andExpect(status().isNotFound());
+		mvc.perform(get("/api/v1/periodos-personal/consulta").with(personal)
+						.param("personaId", ajena).param("desde", "2026-11-23T00:00:00Z").param("hasta", "2026-11-24T00:00:00Z"))
+				.andExpect(status().isNotFound());
+
+		String capacitacion = altaComo("capacitaciones", """
+				{"codigo":"CAP-AREA","nombre":"Trabajo seguro","activo":true}
+				""", personal).path("id").asText();
+		String vigencia = """
+				{"personaId":"%s","capacitacionId":"%s","obtenidaEn":"2026-11-16"}
+				""";
+		String vigente = altaComo("persona-capacitaciones", vigencia.formatted(id, capacitacion), personal).path("id").asText();
+		altaComo("persona-capacitaciones", vigencia.formatted(ajena, capacitacion), otroPersonal);
+		mvc.perform(get("/api/v1/persona-capacitaciones").with(supervisor).param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].id").value(vigente));
+		enviarAlta("persona-capacitaciones", vigencia.formatted(ajena, capacitacion), personal)
+				.andExpect(status().isForbidden());
+
+		String cuenta = altaUsuario("cuenta-varias-areas", area, true);
+		jdbc.update("UPDATE usuarios SET areas_ids = ARRAY[?, ?] WHERE id = ?",
+				UUID.fromString(area), UUID.fromString(externa), UUID.fromString(cuenta));
+		String areaExplicita = altaComo("personas", agregarCampo(datos.formatted("AREA-EXPLICITA", area),
+				"usuarioId", cuenta), personal).path("id").asText();
+		mvc.perform(get("/api/v1/personas/{id}", areaExplicita).with(otroPersonal))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void registraTurnoNocturnoYConsultaPeriodosQueSeSolapan() throws Exception {
 		String persona = altaPersona("CI-TURNOS", "Rosa", true);
 		String turno = alta("turnos", """
@@ -588,6 +652,141 @@ class OptifacotryApplicationTests {
 				.andExpect(status().isForbidden());
 	}
 
+	@Test
+	void conservaGeneracionYRegistraHistoriaCompletaDelResiduo() throws Exception {
+		String tipo = alta("tipos-residuo", """
+				{"codigo":"VIDRIO-SEGUIMIENTO","nombre":"Vidrio","unidad":"kg","activo":true}
+				""").path("id").asText();
+		String generacion = residuoEn(tipo, areaPruebas);
+		String id = alta("registros-residuo", generacion).path("id").asText();
+		String actor = usuarios.findTop2ByReferenciaAutenticacion("operador").getFirst().getId().toString();
+		RequestPostProcessor operador = user("operador");
+		String ruta = "registros-residuo/" + id + "/seguimientos";
+		String almacen = """
+				{"etapa":"ALMACENAMIENTO","ubicacion":"Contenedor B","ocurridoEn":"2026-11-25T12:30:00Z"}
+				""";
+		String areaExterna = altaArea("Área externa al seguimiento");
+		RequestPostProcessor externo = usuarioDeArea("ambiente-externo-seguimiento", areaExterna, "AMBIENTE");
+		enviarAlta(ruta, almacen, externo).andExpect(status().isForbidden());
+		enviarAlta(ruta, almacen.replace("12:30", "11:30"), operador).andExpect(status().isBadRequest());
+		enviarAlta(ruta, almacen, operador).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.responsableId").value(actor));
+		enviarAlta(ruta, almacen.replace("12:30", "12:10"), operador).andExpect(status().isBadRequest());
+		enviarAlta(ruta, almacen.replace("ALMACENAMIENTO", "TRASLADO"), operador)
+				.andExpect(status().isBadRequest());
+		enviarAlta(ruta, """
+				{"etapa":"TRASLADO","origen":"Contenedor B","ubicacion":"Transportista",
+				"ocurridoEn":"2026-11-25T13:00:00Z"}
+				""", operador).andExpect(status().isCreated());
+		enviarAlta(ruta, """
+				{"etapa":"DESTINO_FINAL","ubicacion":"Planta de reciclaje","ocurridoEn":"2026-11-26T16:00:00Z"}
+				""", operador).andExpect(status().isCreated());
+		enviarAlta(ruta, almacen, operador).andExpect(status().isConflict());
+		mvc.perform(put("/api/v1/registros-residuo/{id}", id).with(operador).with(csrf())
+						.contentType(MediaType.APPLICATION_JSON).content(generacion.replace("12.5", "20")))
+				.andExpect(status().isConflict());
+		mvc.perform(get("/api/v1/" + ruta).with(externo)).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/" + ruta).with(operador))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[*].etapa").value(
+						org.hamcrest.Matchers.contains("ALMACENAMIENTO", "TRASLADO", "DESTINO_FINAL")));
+		mvc.perform(get("/api/v1/registros-residuo/{id}", id).with(operador))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cantidad").value(12.5))
+				.andExpect(jsonPath("$.areaId").value(areaPruebas))
+				.andExpect(jsonPath("$.destinoFinal").value("Planta de reciclaje"))
+				.andExpect(jsonPath("$.fechaDestino").value("2026-11-26"));
+	}
+
+	@Test
+	void consultaResiduosCombinandoTipoAreaYFechaDeGeneracion() throws Exception {
+		String area = altaArea("Área de filtro de residuos");
+		String externa = altaArea("Otra área de filtro de residuos");
+		RequestPostProcessor ambiente = usuarioDeArea("ambiente-filtros-residuo", area, "AMBIENTE");
+		RequestPostProcessor externo = usuarioDeArea("ambiente-otra-area-residuo", externa, "AMBIENTE");
+		String tipo = alta("tipos-residuo", """
+				{"codigo":"RES-FILTRO","nombre":"Residuos del filtro","unidad":"kg","activo":true}
+				""").path("id").asText();
+		String otroTipo = alta("tipos-residuo", """
+				{"codigo":"RES-OTRO-TIPO","nombre":"Otro tipo","unidad":"kg","activo":true}
+				""").path("id").asText();
+		String id = altaComo("registros-residuo", residuoEn(tipo, area), ambiente).path("id").asText();
+		altaComo("registros-residuo", residuoEn(otroTipo, area), ambiente);
+		altaComo("registros-residuo", residuoEn(tipo, externa), externo);
+		altaComo("registros-residuo", residuoEn(tipo, area).replace("12:00:00", "13:00:00"), ambiente);
+		enviarAlta("registros-residuo/" + id + "/seguimientos", """
+				{"etapa":"DESTINO_FINAL","ubicacion":"Reciclaje","ocurridoEn":"2026-11-26T10:00:00Z"}
+				""", ambiente).andExpect(status().isCreated());
+
+		String ruta = "/api/v1/registros-residuo/consulta";
+		mvc.perform(get(ruta).with(ambiente).param("tipoId", tipo).param("areaId", area)
+						.param("desde", "2026-11-25T12:00:00Z").param("hasta", "2026-11-25T13:00:00Z")
+						.param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].id").value(id))
+				.andExpect(jsonPath("$.content[0].destinoFinal").value("Reciclaje"));
+		mvc.perform(get(ruta).with(ambiente).param("areaId", externa))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(0));
+		mvc.perform(get(ruta).with(ambiente).param("desde", "2026-11-25T13:00:00Z")
+						.param("hasta", "2026-11-25T12:00:00Z"))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void consultaConsumosYTotalizaConUnidadesCompatiblesEnTodoElConjuntoAutorizado() throws Exception {
+		String area = altaArea("Área de filtro de consumo");
+		String externa = altaArea("Área externa de filtro de consumo");
+		RequestPostProcessor ambiente = usuarioDeArea("ambiente-filtros-consumo", area, "AMBIENTE");
+		RequestPostProcessor externo = usuarioDeArea("ambiente-otra-area-consumo", externa, "AMBIENTE");
+		String agua = alta("recursos-ambientales", """
+				{"codigo":"AGUA-TOTALES","nombre":"Agua totalizada","unidad":"m3","activo":true}
+				""").path("id").asText();
+		String energia = alta("recursos-ambientales", """
+				{"codigo":"ENERGIA-TOTALES","nombre":"Energía totalizada","unidad":"kWh","activo":true}
+				""").path("id").asText();
+		String datos = consumoEn(agua, area);
+		altaComo("registros-consumo", datos, ambiente);
+		altaComo("registros-consumo", datos.replace("125.25", "2").replace("\"L\"", "\"m3\"")
+				.replace("medido", "estimado"), ambiente);
+		altaComo("registros-consumo", datos.replace("T12:00", "T11:00"), ambiente);
+		altaComo("registros-consumo", consumoEn(agua, externa), externo);
+		altaComo("registros-consumo", consumoEn(energia, area).replace("125.25", "0").replace("\"L\"", "\"Wh\""),
+				ambiente);
+		jdbc.update("""
+				INSERT INTO registros_consumo (id, recurso_id, area_id, cantidad, unidad, periodo_inicio, periodo_fin, tipo_dato)
+				VALUES (?, ?, ?, 7, 'kg', timestamptz '2026-11-25T12:00:00Z', timestamptz '2026-11-25T13:00:00Z', 'MEDIDO'),
+				       (?, ?, ?, -1, 'L', timestamptz '2026-11-25T12:00:00Z', timestamptz '2026-11-25T13:00:00Z', 'MEDIDO')
+				""", UUID.randomUUID(), UUID.fromString(agua), UUID.fromString(area),
+				UUID.randomUUID(), UUID.fromString(agua), UUID.fromString(area));
+
+		String ruta = "/api/v1/registros-consumo/consulta";
+		JsonNode consulta = deserializar(mvc.perform(get(ruta).with(ambiente).param("recursoId", agua)
+						.param("areaId", area).param("desde", "2026-11-25T12:00:00Z").param("hasta", "2026-11-25T13:00:00Z")
+						.param("size", "1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.registros.content.length()").value(1))
+				.andExpect(jsonPath("$.registros.page.totalElements").value(4))
+				.andExpect(jsonPath("$.totales.length()").value(1))
+				.andExpect(jsonPath("$.totales[0].recursoId").value(agua))
+				.andExpect(jsonPath("$.totales[0].unidad").value("m3"))
+				.andExpect(jsonPath("$.totales[0].registrosIncluidos").value(2))
+				.andExpect(jsonPath("$.totales[0].registrosExcluidos").value(2)));
+		JsonNode total = consulta.path("totales").get(0);
+		assertThat(total.path("cantidadTotal").decimalValue()).isEqualByComparingTo("2.12525");
+		assertThat(total.path("cantidadMedida").decimalValue()).isEqualByComparingTo("0.12525");
+		assertThat(total.path("cantidadEstimada").decimalValue()).isEqualByComparingTo("2");
+
+		mvc.perform(get(ruta).with(ambiente).param("recursoId", energia))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.totales[0].cantidadTotal").value(0))
+				.andExpect(jsonPath("$.totales[0].cantidadEstimada").doesNotExist());
+		mvc.perform(get(ruta).with(ambiente).param("areaId", externa))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.registros.page.totalElements").value(0))
+				.andExpect(jsonPath("$.totales").isEmpty());
+		mvc.perform(get(ruta).with(ambiente).param("desde", "2026-11-25T13:00:00Z")
+						.param("hasta", "2026-11-25T12:00:00Z"))
+				.andExpect(status().isBadRequest());
+	}
+
 	private static String consumoEn(String recurso, String area) {
 		return """
 				{"recursoId":"%s","areaId":"%s","cantidad":125.25,"unidad":"L","tipoDato":"medido",
@@ -865,7 +1064,17 @@ class OptifacotryApplicationTests {
 	}
 
 	private JsonNode alta(String recurso, String datos) throws Exception {
-		return deserializar(enviarAlta(recurso, datos, user("operador")).andExpect(status().isCreated()));
+		return altaComo(recurso, datos, user("operador"));
+	}
+
+	private JsonNode altaComo(String recurso, String datos, RequestPostProcessor usuario) throws Exception {
+		return deserializar(enviarAlta(recurso, datos, usuario).andExpect(status().isCreated()));
+	}
+
+	private RequestPostProcessor usuarioDeArea(String identidad, String area, String rol) throws Exception {
+		String usuario = altaUsuario(identidad, area, true);
+		asignarRol(usuario, rol);
+		return user(identidad);
 	}
 
 	private ResultActions enviarAlta(String recurso, String datos, RequestPostProcessor usuario) throws Exception {

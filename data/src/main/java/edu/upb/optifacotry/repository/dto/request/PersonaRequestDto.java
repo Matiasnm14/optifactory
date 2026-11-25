@@ -9,6 +9,7 @@ public record PersonaRequestDto(
     @NotBlank String identificacion,
     @NotBlank String nombre,
     UUID usuarioId,
-    @NotNull Boolean activo
+    @NotNull Boolean activo,
+    UUID areaId
 ) {
 }

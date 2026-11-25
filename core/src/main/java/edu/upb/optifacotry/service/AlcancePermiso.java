@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-record AlcancePermiso(Set<UUID> areas, List<String> rutasArea, String rutaAutor, UUID autorId) {
+record AlcancePermiso(Set<UUID> areas, List<RutaArea> rutasArea, String rutaAutor, UUID autorId) {
 
     <E extends BaseEntity> Specification<E> filtro() {
         return (raiz, consulta, criterios) -> {
@@ -34,18 +34,16 @@ record AlcancePermiso(Set<UUID> areas, List<String> rutasArea, String rutaAutor,
                     return criterios.disjunction();
                 }
                 List<Predicate> areasPresentes = new ArrayList<>();
-                for (String rutaArea : rutasArea) {
-                    Predicate presente;
-                    Predicate pertenece;
-                    if (rutaArea.endsWith(".areasIds")) {
-                        HibernateCriteriaBuilder hibernate = (HibernateCriteriaBuilder) criterios;
-                        Path<UUID[]> asignadas = ruta(raiz, rutaArea);
-                        presente = criterios.and(asignadas.isNotNull(), criterios.gt(hibernate.arrayLength(asignadas), 0));
-                        pertenece = hibernate.arrayIncludes(areas.toArray(UUID[]::new), asignadas);
-                    } else {
-                        Path<UUID> area = ruta(raiz, rutaArea);
-                        presente = area.isNotNull();
-                        pertenece = area.in(areas);
+                HibernateCriteriaBuilder hibernate = (HibernateCriteriaBuilder) criterios;
+                for (RutaArea referencia : rutasArea) {
+                    PredicadosArea principal = predicados(raiz, hibernate, referencia.principal());
+                    Predicate presente = principal.presente();
+                    Predicate pertenece = principal.pertenece();
+                    if (referencia.respaldo() != null) {
+                        PredicadosArea respaldo = predicados(raiz, hibernate, referencia.respaldo());
+                        pertenece = criterios.or(criterios.and(presente, pertenece),
+                                criterios.and(criterios.not(presente), respaldo.pertenece()));
+                        presente = criterios.or(presente, respaldo.presente());
                     }
                     areasPresentes.add(presente);
                     filtros.add(criterios.or(criterios.not(presente), pertenece));
@@ -56,6 +54,16 @@ record AlcancePermiso(Set<UUID> areas, List<String> rutasArea, String rutaAutor,
         };
     }
 
+    private PredicadosArea predicados(From<?, ?> raiz, HibernateCriteriaBuilder criterios, String atributo) {
+        if (atributo.endsWith(".areasIds")) {
+            Path<UUID[]> asignadas = ruta(raiz, atributo);
+            return new PredicadosArea(criterios.gt(criterios.coalesce(criterios.arrayLength(asignadas), 0), 0),
+                    criterios.arrayIncludes(areas.toArray(UUID[]::new), asignadas));
+        }
+        Path<UUID> area = ruta(raiz, atributo);
+        return new PredicadosArea(area.isNotNull(), area.in(areas));
+    }
+
     void verificar(BaseEntity entidad) {
         if (rutaAutor != null && !autorId.equals(leer(entidad, rutaAutor))) {
             throw sinAcceso();
@@ -64,8 +72,11 @@ record AlcancePermiso(Set<UUID> areas, List<String> rutasArea, String rutaAutor,
             return;
         }
         boolean areaVerificada = false;
-        for (String ruta : rutasArea) {
-            Object valor = leer(entidad, ruta);
+        for (RutaArea referencia : rutasArea) {
+            Object valor = leer(entidad, referencia.principal());
+            if (valor == null && referencia.respaldo() != null) {
+                valor = leer(entidad, referencia.respaldo());
+            }
             if (valor instanceof UUID id) {
                 if (!areas.contains(id)) {
                     throw sinAcceso();
@@ -117,5 +128,15 @@ record AlcancePermiso(Set<UUID> areas, List<String> rutasArea, String rutaAutor,
 
     private static ForbiddenOperationException sinAcceso() {
         return new ForbiddenOperationException("El registro está fuera del alcance autorizado.");
+    }
+
+    record RutaArea(String principal, String respaldo) {
+
+        RutaArea(String principal) {
+            this(principal, null);
+        }
+    }
+
+    private record PredicadosArea(Predicate presente, Predicate pertenece) {
     }
 }

@@ -1,8 +1,11 @@
 package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.entity.*;
+import edu.upb.optifacotry.service.AlcancePermiso.RutaArea;
 import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +27,6 @@ final class PoliticaPermisos {
     private static final String AREA_MAQUINA_PARADA = "parada.maquina.linea.area.id";
     private static final String AREA_ORDEN_PARADA = "parada.orden.linea.area.id";
     private static final String AREA_LOTE = "lote.operacionOrigen.orden.linea.area.id";
-    private static final String AREAS_PERSONA = "persona.usuario.areasIds";
 
     private static final Map<Class<? extends BaseEntity>, Regla> REGLAS = reglas();
 
@@ -49,7 +51,7 @@ final class PoliticaPermisos {
                 return new AlcancePermiso(actor.areas(), List.of(), null, null);
             }
             if (consulta) {
-                return new AlcancePermiso(actor.areas(), List.of("id"), null, null);
+                return new AlcancePermiso(actor.areas(), rutas("id"), null, null);
             }
         }
         throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
@@ -108,9 +110,9 @@ final class PoliticaPermisos {
         reglas.put(EstadoOperativo.class, regla(mantenimiento, ninguna, AREA_LINEA, AREA_MAQUINA));
         reglas.put(SolicitudMantenimiento.class, regla(mantenimiento, mantenimiento,
                 AREA_MAQUINA, AREA_PARADA, AREA_MAQUINA_PARADA, AREA_ORDEN_PARADA));
-        reglas.put(Intervencion.class, regla(mantenimiento, mantenimiento, AREA_MAQUINA,
+        reglas.put(Intervencion.class, reglaConPersona(mantenimiento, mantenimiento, "tecnico", AREA_MAQUINA,
                 "solicitud.maquina.linea.area.id", "solicitud.parada.linea.area.id",
-                "solicitud.parada.maquina.linea.area.id", "solicitud.parada.orden.linea.area.id", "tecnico.usuario.areasIds"));
+                "solicitud.parada.maquina.linea.area.id", "solicitud.parada.orden.linea.area.id"));
         reglas.put(RevisionPreventiva.class, regla(mantenimiento, mantenimiento,
                 "plan.maquina.linea.area.id", "intervencion.maquina.linea.area.id"));
         reglas.put(EstimacionReparacion.class, regla(mantenimiento, mantenimiento, "intervencion.maquina.linea.area.id"));
@@ -129,12 +131,12 @@ final class PoliticaPermisos {
         reglas.put(MovimientoInventario.class, regla(inventario, ninguna, AREA_LOTE, AREA_OPERACION,
                 "intervencion.maquina.linea.area.id", "movimientoOrigen.operacionOrden.orden.linea.area.id"));
 
-        reglas.put(Persona.class, regla(consultaPersonal, personal, "usuario.areasIds"));
-        reglas.put(PeriodoPersonal.class, regla(consultaPersonal, personal, AREAS_PERSONA));
-        reglas.put(PersonaCapacitacion.class, regla(consultaPersonal, personal, AREAS_PERSONA));
+        reglas.put(Persona.class, reglaConPersona(consultaPersonal, personal, ""));
+        reglas.put(PeriodoPersonal.class, reglaConPersona(consultaPersonal, personal, "persona"));
+        reglas.put(PersonaCapacitacion.class, reglaConPersona(consultaPersonal, personal, "persona"));
         reglas.put(Capacitacion.class, regla(consultaPersonal, personal));
         reglas.put(CapacitacionRequeridaLinea.class, regla(consultaPersonal, personal, AREA_LINEA));
-        reglas.put(AsignacionPersonal.class, regla(consultaPersonal, ninguna, AREA_LINEA, AREA_OPERACION, AREAS_PERSONA));
+        reglas.put(AsignacionPersonal.class, reglaConPersona(consultaPersonal, ninguna, "persona", AREA_LINEA, AREA_OPERACION));
         reglas.put(ControlCalidad.class, regla(calidad, calidad));
         reglas.put(Inspeccion.class, regla(calidad, calidad, AREA_ORDEN, AREA_LOTE));
         reglas.put(ResultadoInspeccion.class, regla(calidad, calidad,
@@ -143,8 +145,8 @@ final class PoliticaPermisos {
         reglas.put(DisposicionLote.class, regla(Set.of(INVENTARIO, CALIDAD), ninguna,
                 "bloqueo.lote.operacionOrigen.orden.linea.area.id"));
 
-        reglas.put(ReporteSeguridad.class, new Regla(seguridad, ninguna, Set.of(), List.of("area.id"), "autor.id"));
-        reglas.put(Adjunto.class, new Regla(seguridad, ninguna, Set.of(), List.of("reporteSeguridad.area.id"),
+        reglas.put(ReporteSeguridad.class, new Regla(seguridad, ninguna, Set.of(), rutas("area.id"), "autor.id"));
+        reglas.put(Adjunto.class, new Regla(seguridad, ninguna, Set.of(), rutas("reporteSeguridad.area.id"),
                 "reporteSeguridad.autor.id"));
         reglas.put(AccionSeguridad.class, soloAlta(seguridad, seguridad, "reporte.area.id"));
         reglas.put(SuspensionActividad.class, regla(seguridad, ninguna, "reporte.area.id", "area.id", AREA_LINEA, AREA_OPERACION));
@@ -166,14 +168,25 @@ final class PoliticaPermisos {
     }
 
     private static Regla regla(Set<CodigoRol> lectura, Set<CodigoRol> escritura, String... areas) {
-        return new Regla(lectura, escritura, Set.of(CREAR, MODIFICAR, ELIMINAR), List.of(areas), null);
+        return new Regla(lectura, escritura, Set.of(CREAR, MODIFICAR, ELIMINAR), rutas(areas), null);
     }
 
     private static Regla soloAlta(Set<CodigoRol> lectura, Set<CodigoRol> escritura, String... areas) {
-        return new Regla(lectura, escritura, Set.of(CREAR), List.of(areas), null);
+        return new Regla(lectura, escritura, Set.of(CREAR), rutas(areas), null);
+    }
+
+    private static Regla reglaConPersona(Set<CodigoRol> lectura, Set<CodigoRol> escritura, String persona, String... areas) {
+        String prefijo = persona.isEmpty() ? "" : persona + ".";
+        List<RutaArea> referencias = new ArrayList<>(rutas(areas));
+        referencias.add(new RutaArea(prefijo + "area.id", prefijo + "usuario.areasIds"));
+        return new Regla(lectura, escritura, Set.of(CREAR, MODIFICAR, ELIMINAR), List.copyOf(referencias), null);
+    }
+
+    private static List<RutaArea> rutas(String... areas) {
+        return Arrays.stream(areas).map(RutaArea::new).toList();
     }
 
     private record Regla(Set<CodigoRol> lectura, Set<CodigoRol> escritura, Set<AccionPermiso> mutaciones,
-                         List<String> areas, String autor) {
+                         List<RutaArea> areas, String autor) {
     }
 }
