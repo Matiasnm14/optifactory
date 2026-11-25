@@ -28,7 +28,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.net.URI;
-import java.security.Principal;
 import java.util.UUID;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
@@ -49,27 +48,27 @@ public class ReporteSeguridadController extends ReadOnlyCrudController<ReporteSe
 
     @PostMapping(consumes = APPLICATION_JSON_VALUE)
     public ResponseEntity<ReporteSeguridadResponseDto> registrar(
-            Principal principal, @Valid @RequestBody ReporteSeguridadRequestDto request) {
-        return creado(reportes.registrar(principal.getName(), request, null));
+            @Valid @RequestBody ReporteSeguridadRequestDto request) {
+        return creado(reportes.registrar(request, null));
     }
 
     @PostMapping(consumes = MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ReporteSeguridadResponseDto> registrarConImagen(
-            Principal principal, @Valid @RequestPart("reporte") ReporteSeguridadRequestDto reporte,
+            @Valid @RequestPart("reporte") ReporteSeguridadRequestDto reporte,
             @RequestPart(value = "imagen", required = false) MultipartFile imagen) {
-        return creado(reportes.registrar(principal.getName(), reporte, leerImagen(imagen)));
+        return creado(reportes.registrar(reporte, leerImagen(imagen)));
     }
 
     @GetMapping("/{id}/adjuntos")
     public PagedModel<AdjuntoResponseDto> consultarAdjuntos(
             @PathVariable UUID id, @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        reportes.findById(id);
         return new PagedModel<>(adjuntos.consultarReporte(id, pageable));
     }
 
     @GetMapping("/{reporteId}/adjuntos/{adjuntoId}/imagen")
-    public ResponseEntity<byte[]> consultarImagen(Principal principal, @PathVariable UUID reporteId,
-                                                   @PathVariable UUID adjuntoId) {
-        ImagenEvidenciaResponseDto imagen = reportes.consultarImagen(principal.getName(), reporteId, adjuntoId);
+    public ResponseEntity<byte[]> consultarImagen(@PathVariable UUID reporteId, @PathVariable UUID adjuntoId) {
+        ImagenEvidenciaResponseDto imagen = reportes.consultarImagen(reporteId, adjuntoId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(imagen.tipoContenido()))
                 .cacheControl(CacheControl.noStore())

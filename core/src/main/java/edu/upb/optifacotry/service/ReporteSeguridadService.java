@@ -13,7 +13,6 @@ import edu.upb.optifacotry.repository.repos.AdjuntoRepository;
 import edu.upb.optifacotry.repository.repos.AreaRepository;
 import edu.upb.optifacotry.repository.repos.ImagenAdjuntoRepository;
 import edu.upb.optifacotry.repository.repos.ReporteSeguridadRepository;
-import edu.upb.optifacotry.repository.repos.UsuarioRepository;
 import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
 import edu.upb.optifacotry.service.exception.InvalidRequestException;
 import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
@@ -27,7 +26,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -38,24 +36,27 @@ public class ReporteSeguridadService extends ReadOnlyCrudService<ReporteSegurida
 
     private static final long MAX_PIXELES = 16_000_000L;
 
-    private final UsuarioRepository usuarios;
+    private final PermisosService permisos;
     private final AreaRepository areas;
     private final AdjuntoRepository adjuntos;
     private final ImagenAdjuntoRepository imagenes;
 
-    public ReporteSeguridadService(ReporteSeguridadRepository repository, UsuarioRepository usuarios,
+    public ReporteSeguridadService(ReporteSeguridadRepository repository, PermisosService permisos,
                                    AreaRepository areas, AdjuntoRepository adjuntos, ImagenAdjuntoRepository imagenes) {
         super(repository);
-        this.usuarios = usuarios;
+        this.permisos = permisos;
         this.areas = areas;
         this.adjuntos = adjuntos;
         this.imagenes = imagenes;
     }
 
     @Transactional
-    public ReporteSeguridadResponseDto registrar(String identidad, ReporteSeguridadRequestDto request,
-                                                 ImagenEvidenciaRequestDto imagen) {
-        Usuario autor = usuarioEnArea(identidad, request.areaId());
+    public ReporteSeguridadResponseDto registrar(ReporteSeguridadRequestDto request, ImagenEvidenciaRequestDto imagen) {
+        PermisosService.Actor actor = permisos.actorActual();
+        if (!actor.areas().contains(request.areaId())) {
+            throw new ForbiddenOperationException("El usuario no tiene asignada el área del reporte.");
+        }
+        Usuario autor = actor.usuario();
         Area area = areas.findById(request.areaId()).orElseThrow(() -> new ResourceNotFoundException(request.areaId()));
         String tipoImagen = imagen == null ? null : validarImagen(imagen.contenido());
         Instant fecha = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -83,24 +84,13 @@ public class ReporteSeguridadService extends ReadOnlyCrudService<ReporteSegurida
         return toResponse(reporte);
     }
 
-    public ImagenEvidenciaResponseDto consultarImagen(String identidad, UUID reporteId, UUID adjuntoId) {
+    public ImagenEvidenciaResponseDto consultarImagen(UUID reporteId, UUID adjuntoId) {
+        AlcancePermiso permiso = acceso(AccionPermiso.CONSULTAR);
         ReporteSeguridad reporte = findEntity(reporteId);
-        usuarioEnArea(identidad, referenceId(reporte.getArea()));
+        permiso.verificar(reporte);
         ImagenAdjunto imagen = imagenes.findByIdAndAdjunto_ReporteSeguridad_Id(adjuntoId, reporteId)
                 .orElseThrow(() -> new ResourceNotFoundException(adjuntoId));
         return new ImagenEvidenciaResponseDto(imagen.getTipoContenido(), imagen.getContenido());
-    }
-
-    private Usuario usuarioEnArea(String identidad, UUID areaId) {
-        List<Usuario> coincidencias = usuarios.findTop2ByReferenciaAutenticacion(identidad);
-        if (coincidencias.size() != 1 || !Boolean.TRUE.equals(coincidencias.getFirst().getActivo())) {
-            throw new ForbiddenOperationException("Se requiere un usuario activo asociado a la identidad autenticada.");
-        }
-        Usuario usuario = coincidencias.getFirst();
-        if (areaId == null || usuario.getAreasIds() == null || !Arrays.asList(usuario.getAreasIds()).contains(areaId)) {
-            throw new ForbiddenOperationException("El usuario no tiene asignada el área del reporte.");
-        }
-        return usuario;
     }
 
     private Adjunto crearAdjunto(ReporteSeguridad reporte, String nombre, String archivo) {

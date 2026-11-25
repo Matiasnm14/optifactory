@@ -1,13 +1,15 @@
 package edu.upb.optifacotry.repository.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDate;
 import java.util.UUID;
 
 public record AccionSeguridadRequestDto(
-    UUID reporteId,
-    String accion,
-    UUID responsableId,
-    LocalDate fechaObjetivo,
-    String estado
+    @NotNull UUID reporteId,
+    @NotBlank String accion,
+    @NotNull UUID responsableId,
+    LocalDate fechaObjetivo
 ) {
 }

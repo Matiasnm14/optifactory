@@ -6,9 +6,7 @@ import edu.upb.optifacotry.repository.entity.PeriodoPersonal;
 import edu.upb.optifacotry.repository.entity.Persona;
 import edu.upb.optifacotry.repository.entity.Turno;
 import edu.upb.optifacotry.repository.repos.PeriodoPersonalRepository;
-import edu.upb.optifacotry.repository.repos.PersonaRepository;
 import edu.upb.optifacotry.service.exception.InvalidRequestException;
-import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,28 +22,24 @@ public class PeriodoPersonalService extends CrudService<PeriodoPersonal, Periodo
 
     private static final Set<String> TIPOS = Set.of("TURNO", "DISPONIBILIDAD", "AUSENCIA");
 
-    private final PeriodoPersonalRepository periodos;
-    private final PersonaRepository personas;
+    private final PersonaService personas;
 
-    public PeriodoPersonalService(PeriodoPersonalRepository periodos, PersonaRepository personas) {
+    public PeriodoPersonalService(PeriodoPersonalRepository periodos, PersonaService personas) {
         super(periodos);
-        this.periodos = periodos;
         this.personas = personas;
     }
 
     public Page<PeriodoPersonalResponseDto> consultar(UUID personaId, Instant desde, Instant hasta, Pageable pageable) {
         requireIntervalo(desde, hasta);
-        if (!personas.existsById(personaId)) {
-            throw new ResourceNotFoundException(personaId);
-        }
+        personas.findById(personaId);
         // Conserva las comparaciones estrictas con instantes almacenados en microsegundos.
         Instant limiteInferior = desde.truncatedTo(ChronoUnit.MICROS);
-        Instant limiteSuperior = hasta.truncatedTo(ChronoUnit.MICROS);
-        if (limiteSuperior.isBefore(hasta)) {
-            limiteSuperior = limiteSuperior.plus(1, ChronoUnit.MICROS);
-        }
-        return periodos.findByPersonaIdAndInicioLessThanAndFinGreaterThan(personaId, limiteSuperior, limiteInferior, pageable)
-                .map(this::toResponse);
+        Instant truncado = hasta.truncatedTo(ChronoUnit.MICROS);
+        Instant limiteSuperior = truncado.isBefore(hasta) ? truncado.plus(1, ChronoUnit.MICROS) : truncado;
+        return listar((raiz, consulta, criterios) -> criterios.and(
+                criterios.equal(raiz.get("persona").get("id"), personaId),
+                criterios.lessThan(raiz.get("inicio"), limiteSuperior),
+                criterios.greaterThan(raiz.get("fin"), limiteInferior)), pageable);
     }
 
     @Override

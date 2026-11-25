@@ -5,15 +5,22 @@ import edu.upb.optifacotry.repository.dto.response.RegistroConsumoResponseDto;
 import edu.upb.optifacotry.repository.entity.Area;
 import edu.upb.optifacotry.repository.entity.RecursoAmbiental;
 import edu.upb.optifacotry.repository.entity.RegistroConsumo;
-import edu.upb.optifacotry.repository.entity.Usuario;
+import edu.upb.optifacotry.repository.repos.RecursoAmbientalRepository;
 import edu.upb.optifacotry.repository.repos.RegistroConsumoRepository;
+import edu.upb.optifacotry.service.exception.InvalidRequestException;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
+
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class RegistroConsumoService extends CrudService<RegistroConsumo, RegistroConsumoRequestDto, RegistroConsumoResponseDto> {
 
-    public RegistroConsumoService(RegistroConsumoRepository repository) {
+    private final RecursoAmbientalRepository recursos;
+
+    public RegistroConsumoService(RegistroConsumoRepository repository, RecursoAmbientalRepository recursos) {
         super(repository);
+        this.recursos = recursos;
     }
 
     @Override
@@ -23,15 +30,33 @@ public class RegistroConsumoService extends CrudService<RegistroConsumo, Registr
 
     @Override
     protected void applyRequest(RegistroConsumoRequestDto request, RegistroConsumo entity) {
-        entity.setRecurso(reference(RecursoAmbiental.class, request.recursoId()));
         entity.setArea(reference(Area.class, request.areaId()));
         entity.setCantidad(request.cantidad());
-        entity.setUnidad(request.unidad());
-        entity.setPeriodoInicio(request.periodoInicio());
-        entity.setPeriodoFin(request.periodoFin());
-        entity.setTipoDato(request.tipoDato());
-        entity.setFuente(request.fuente());
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
+        entity.setUnidad(request.unidad().strip());
+        entity.setPeriodoInicio(request.periodoInicio().truncatedTo(ChronoUnit.MICROS));
+        entity.setPeriodoFin(request.periodoFin().truncatedTo(ChronoUnit.MICROS));
+        entity.setFuente(request.fuente().strip());
+    }
+
+    @Override
+    protected void completarEscritura(RegistroConsumoRequestDto request, RegistroConsumo entity,
+                                      PermisosService.Actor actor) {
+        if (!entity.getPeriodoFin().isAfter(entity.getPeriodoInicio())) {
+            throw new InvalidRequestException("El fin del período debe ser posterior al inicio.");
+        }
+        RecursoAmbiental recurso = recursos.findLockedById(request.recursoId())
+                .orElseThrow(() -> new ResourceNotFoundException(request.recursoId()));
+        if (!Boolean.TRUE.equals(recurso.getActivo())) {
+            throw new InvalidRequestException("El recurso ambiental debe estar activo.");
+        }
+        if (!RecursoAmbientalService.aceptaUnidad(recurso.getUnidad(), entity.getUnidad())) {
+            throw new InvalidRequestException("La unidad no es compatible con el recurso ambiental.");
+        }
+        entity.setRecurso(recurso);
+        entity.setTipoDato(TipoDatoAmbiental.normalizar(request.tipoDato()));
+        if (entity.getId() == null) {
+            entity.setResponsable(actor.usuario());
+        }
     }
 
     @Override

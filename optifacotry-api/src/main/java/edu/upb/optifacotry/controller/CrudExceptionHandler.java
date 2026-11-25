@@ -1,5 +1,6 @@
 package edu.upb.optifacotry.controller;
 
+import edu.upb.optifacotry.service.exception.ConflictException;
 import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
 import edu.upb.optifacotry.service.exception.InvalidRequestException;
 import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
@@ -16,6 +17,11 @@ import java.sql.SQLException;
 
 @RestControllerAdvice
 public class CrudExceptionHandler {
+
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail conflict(ConflictException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
 
     @ExceptionHandler(ForbiddenOperationException.class)
     ProblemDetail forbidden(ForbiddenOperationException exception) {

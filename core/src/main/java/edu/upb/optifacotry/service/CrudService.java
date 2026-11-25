@@ -6,6 +6,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import static edu.upb.optifacotry.service.AccionPermiso.CREAR;
+import static edu.upb.optifacotry.service.AccionPermiso.ELIMINAR;
+import static edu.upb.optifacotry.service.AccionPermiso.MODIFICAR;
+
 public abstract class CrudService<E extends BaseEntity, Q, R> extends ReadOnlyCrudService<E, R> {
 
     protected CrudService(JpaRepository<E, UUID> repository) {
@@ -14,8 +18,10 @@ public abstract class CrudService<E extends BaseEntity, Q, R> extends ReadOnlyCr
 
     @Transactional
     public R create(Q request) {
+        PermisosService.Actor actor = actorActual();
+        AlcancePermiso permiso = acceso(CREAR, actor);
         E entity = newEntity();
-        applyRequest(request, entity);
+        prepararEscritura(request, entity, permiso, actor);
         E saved = repository.saveAndFlush(entity);
         entityManager.refresh(saved);
         return toResponse(saved);
@@ -23,8 +29,11 @@ public abstract class CrudService<E extends BaseEntity, Q, R> extends ReadOnlyCr
 
     @Transactional
     public R update(UUID id, Q request) {
-        E entity = findEntity(id);
-        applyRequest(request, entity);
+        PermisosService.Actor actor = actorActual();
+        AlcancePermiso permiso = acceso(MODIFICAR, actor);
+        E entity = findEntityForUpdate(id);
+        permiso.verificar(entity);
+        prepararEscritura(request, entity, permiso, actor);
         repository.flush();
         entityManager.refresh(entity);
         return toResponse(entity);
@@ -32,11 +41,24 @@ public abstract class CrudService<E extends BaseEntity, Q, R> extends ReadOnlyCr
 
     @Transactional
     public void delete(UUID id) {
-        repository.delete(findEntity(id));
+        AlcancePermiso permiso = acceso(ELIMINAR);
+        E entity = findEntityForUpdate(id);
+        permiso.verificar(entity);
+        repository.delete(entity);
         repository.flush();
     }
 
     protected abstract E newEntity();
 
     protected abstract void applyRequest(Q request, E entity);
+
+    // Las validaciones sobre otras entidades pueden ejecutarse una vez autorizado el alcance.
+    protected void completarEscritura(Q request, E entity, PermisosService.Actor actor) {
+    }
+
+    private void prepararEscritura(Q request, E entity, AlcancePermiso permiso, PermisosService.Actor actor) {
+        applyRequest(request, entity);
+        permiso.verificar(entity);
+        completarEscritura(request, entity, actor);
+    }
 }
