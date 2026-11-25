@@ -1,5 +1,6 @@
 package edu.upb.optifacotry.repository.entity;
 
+import jakarta.annotation.Nullable;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -21,6 +22,7 @@ public class Maquina extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "linea_id", foreignKey = @ForeignKey(name = "fk_maquinas_linea_id"))
+    @Nullable
     private Linea linea;
 
     @ManyToOne(fetch = FetchType.LAZY)
