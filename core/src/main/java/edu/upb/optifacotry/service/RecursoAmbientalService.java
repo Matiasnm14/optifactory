@@ -5,7 +5,12 @@ import edu.upb.optifacotry.repository.dto.response.RecursoAmbientalResponseDto;
 import edu.upb.optifacotry.repository.dto.response.UnidadesRecursoResponseDto;
 import edu.upb.optifacotry.repository.entity.RecursoAmbiental;
 import edu.upb.optifacotry.repository.repos.RecursoAmbientalRepository;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -14,7 +19,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-public class RecursoAmbientalService extends CrudService<RecursoAmbiental, RecursoAmbientalRequestDto, RecursoAmbientalResponseDto> {
+public class RecursoAmbientalService {
 
     // Exponentes respecto de kg, m³ y kWh, respectivamente.
     private static final List<Map<String, Integer>> ESCALAS = List.of(
@@ -23,10 +28,57 @@ public class RecursoAmbientalService extends CrudService<RecursoAmbiental, Recur
             Map.of("Wh", -3, "kWh", 0, "MWh", 3)
     );
 
-    public RecursoAmbientalService(RecursoAmbientalRepository repository) {
-        super(repository);
+    private final RecursoAmbientalRepository repository;
+    private final EntidadesJpa entidades;
+
+    public RecursoAmbientalService(RecursoAmbientalRepository repository, EntidadesJpa entidades) {
+        this.repository = repository;
+        this.entidades = entidades;
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
+    public Page<RecursoAmbientalResponseDto> findAll(Pageable pageable) {
+        return repository.findAll(pageable).map(this::toResponse);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
+    public RecursoAmbientalResponseDto findById(UUID id) {
+        return repository.findById(id).map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public RecursoAmbientalResponseDto create(RecursoAmbientalRequestDto request) {
+        RecursoAmbiental entidad = new RecursoAmbiental();
+        applyRequest(request, entidad);
+        var guardada = repository.saveAndFlush(entidad);
+        entidades.refrescar(guardada);
+        return toResponse(guardada);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public RecursoAmbientalResponseDto update(UUID id, RecursoAmbientalRequestDto request) {
+        RecursoAmbiental entidad = entidades.bloquear(RecursoAmbiental.class, id);
+        applyRequest(request, entidad);
+        repository.flush();
+        entidades.refrescar(entidad);
+        return toResponse(entidad);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public void delete(UUID id) {
+        RecursoAmbiental entidad = entidades.bloquear(RecursoAmbiental.class, id);
+        repository.delete(entidad);
+        repository.flush();
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
     public UnidadesRecursoResponseDto consultarUnidades(UUID id) {
         String unidad = findById(id).unidad();
         return new UnidadesRecursoResponseDto(unidad, factoresConversion(unidad));
@@ -57,21 +109,15 @@ public class RecursoAmbientalService extends CrudService<RecursoAmbiental, Recur
                 .orElseGet(() -> Map.of(unidad, 0));
     }
 
-    @Override
-    protected RecursoAmbiental newEntity() {
-        return new RecursoAmbiental();
-    }
 
-    @Override
-    protected void applyRequest(RecursoAmbientalRequestDto request, RecursoAmbiental entity) {
+    private void applyRequest(RecursoAmbientalRequestDto request, RecursoAmbiental entity) {
         entity.setCodigo(request.codigo().strip());
         entity.setNombre(request.nombre().strip());
         entity.setUnidad(request.unidad().strip());
         entity.setActivo(request.activo());
     }
 
-    @Override
-    protected RecursoAmbientalResponseDto toResponse(RecursoAmbiental entity) {
+    private RecursoAmbientalResponseDto toResponse(RecursoAmbiental entity) {
         return new RecursoAmbientalResponseDto(
             entity.getId(),
             entity.getCodigo(),

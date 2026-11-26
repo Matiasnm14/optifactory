@@ -13,6 +13,9 @@ import edu.upb.optifacotry.repository.repos.UsuarioRolRepository;
 import edu.upb.optifacotry.service.exception.ConflictException;
 import edu.upb.optifacotry.service.exception.InvalidRequestException;
 import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.node.JsonNodeFactory;
@@ -24,27 +27,46 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-public class UsuarioRolService extends ReadOnlyCrudService<UsuarioRol, UsuarioRolResponseDto> {
+public class UsuarioRolService {
 
     private final UsuarioRolRepository asignaciones;
     private final UsuarioRepository usuarios;
     private final RolRepository roles;
     private final AuditoriaCambioRepository auditoria;
     private final PermisosService permisos;
+    private final EntidadesJpa entidades;
 
-    public UsuarioRolService(UsuarioRolRepository asignaciones, UsuarioRepository usuarios, RolRepository roles,
-                             AuditoriaCambioRepository auditoria, PermisosService permisos) {
-        super(asignaciones);
+    public UsuarioRolService(UsuarioRolRepository asignaciones,
+                             UsuarioRepository usuarios,
+                             RolRepository roles,
+                             AuditoriaCambioRepository auditoria,
+                             PermisosService permisos,
+                             EntidadesJpa entidades) {
         this.asignaciones = asignaciones;
         this.usuarios = usuarios;
         this.roles = roles;
         this.auditoria = auditoria;
         this.permisos = permisos;
+        this.entidades = entidades;
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('ADMIN')")
+    @Transactional(readOnly = true)
+    public Page<UsuarioRolResponseDto> findAll(Pageable pageable) {
+        return asignaciones.findAll(pageable).map(this::toResponse);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('ADMIN')")
+    @Transactional(readOnly = true)
+    public UsuarioRolResponseDto findById(UUID id) {
+        return asignaciones.findById(id).map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('ADMIN')")
     @Transactional
     public UsuarioRolResponseDto asignar(UsuarioRolRequestDto request) {
-        Usuario actor = permisos.exigirRol(CodigoRol.ADMIN);
+        Usuario actor = entidades.referencia(Usuario.class, permisos.actorActual().usuarioId());
         Usuario usuario = usuarios.findLockedById(request.usuarioId())
                 .orElseThrow(() -> new ResourceNotFoundException(request.usuarioId()));
         Rol rol = roles.findById(request.rolId())
@@ -55,16 +77,18 @@ public class UsuarioRolService extends ReadOnlyCrudService<UsuarioRol, UsuarioRo
         return toResponse(registrarAsignacion(usuario, rol, actor, ahora()));
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('ADMIN')")
     @Transactional
     public UsuarioRolResponseDto retirar(UUID id) {
-        Usuario actor = permisos.exigirRol(CodigoRol.ADMIN);
-        UsuarioRol asignacion = findEntity(id);
-        UUID usuarioId = referenceId(asignacion.getUsuario());
+        Usuario actor = entidades.referencia(Usuario.class, permisos.actorActual().usuarioId());
+        UsuarioRol asignacion = asignaciones.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
+        UUID usuarioId = entidades.id(asignacion.getUsuario());
         if (usuarioId == null || asignacion.getRol() == null) {
             throw new ConflictException("La asignación histórica no tiene usuario o rol.");
         }
         usuarios.findLockedById(usuarioId).orElseThrow(() -> new ResourceNotFoundException(usuarioId));
-        entityManager.refresh(asignacion);
+        entidades.refrescar(asignacion);
         if (asignacion.getRetiradoEn() != null) {
             return toResponse(asignacion);
         }
@@ -134,8 +158,8 @@ public class UsuarioRolService extends ReadOnlyCrudService<UsuarioRol, UsuarioRo
 
     private ObjectNode valores(UsuarioRol asignacion) {
         ObjectNode valores = JsonNodeFactory.instance.objectNode()
-                .put("usuarioAfectadoId", referenceId(asignacion.getUsuario()).toString())
-                .put("rolId", referenceId(asignacion.getRol()).toString())
+                .put("usuarioAfectadoId", entidades.id(asignacion.getUsuario()).toString())
+                .put("rolId", entidades.id(asignacion.getRol()).toString())
                 .put("rolCodigo", asignacion.getRol().getCodigo())
                 .put("vigente", asignacion.getRetiradoEn() == null);
         if (asignacion.getRetiradoEn() != null) {
@@ -148,16 +172,15 @@ public class UsuarioRolService extends ReadOnlyCrudService<UsuarioRol, UsuarioRo
         return Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
-    @Override
-    protected UsuarioRolResponseDto toResponse(UsuarioRol entity) {
+    private UsuarioRolResponseDto toResponse(UsuarioRol entity) {
         return new UsuarioRolResponseDto(
             entity.getId(),
-            referenceId(entity.getUsuario()),
-            referenceId(entity.getRol()),
+            entidades.id(entity.getUsuario()),
+            entidades.id(entity.getRol()),
             entity.getAsignadoEn(),
-            referenceId(entity.getAsignadoPor()),
+            entidades.id(entity.getAsignadoPor()),
             entity.getRetiradoEn(),
-            referenceId(entity.getRetiradoPor())
+            entidades.id(entity.getRetiradoPor())
         );
     }
 }

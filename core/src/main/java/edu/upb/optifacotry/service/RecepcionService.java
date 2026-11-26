@@ -2,40 +2,39 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.RecepcionRequestDto;
 import edu.upb.optifacotry.repository.dto.response.RecepcionResponseDto;
-import edu.upb.optifacotry.repository.entity.Proveedor;
-import edu.upb.optifacotry.repository.entity.Recepcion;
-import edu.upb.optifacotry.repository.entity.Usuario;
-import edu.upb.optifacotry.repository.repos.RecepcionRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class RecepcionService extends CrudService<Recepcion, RecepcionRequestDto, RecepcionResponseDto> {
+public class RecepcionService {
 
-    public RecepcionService(RecepcionRepository repository) {
-        super(repository);
+    @PreAuthorize("denyAll()")
+    public Page<RecepcionResponseDto> findAll(Pageable pageable) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected Recepcion newEntity() {
-        return new Recepcion();
+    @PreAuthorize("denyAll()")
+    public RecepcionResponseDto findById(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected void applyRequest(RecepcionRequestDto request, Recepcion entity) {
-        entity.setProveedor(reference(Proveedor.class, request.proveedorId()));
-        entity.setReferenciaCompra(request.referenciaCompra());
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
-        entity.setRecibidaEn(request.recibidaEn());
+    @PreAuthorize("denyAll()")
+    public RecepcionResponseDto create(RecepcionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected RecepcionResponseDto toResponse(Recepcion entity) {
-        return new RecepcionResponseDto(
-            entity.getId(),
-            referenceId(entity.getProveedor()),
-            entity.getReferenciaCompra(),
-            referenceId(entity.getResponsable()),
-            entity.getRecibidaEn()
-        );
+    @PreAuthorize("denyAll()")
+    public RecepcionResponseDto update(UUID id, RecepcionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 }

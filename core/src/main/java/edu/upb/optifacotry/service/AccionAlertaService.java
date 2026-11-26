@@ -2,40 +2,39 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.AccionAlertaRequestDto;
 import edu.upb.optifacotry.repository.dto.response.AccionAlertaResponseDto;
-import edu.upb.optifacotry.repository.entity.AccionAlerta;
-import edu.upb.optifacotry.repository.entity.Alerta;
-import edu.upb.optifacotry.repository.entity.Usuario;
-import edu.upb.optifacotry.repository.repos.AccionAlertaRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class AccionAlertaService extends CrudService<AccionAlerta, AccionAlertaRequestDto, AccionAlertaResponseDto> {
+public class AccionAlertaService {
 
-    public AccionAlertaService(AccionAlertaRepository repository) {
-        super(repository);
+    @PreAuthorize("denyAll()")
+    public Page<AccionAlertaResponseDto> findAll(Pageable pageable) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected AccionAlerta newEntity() {
-        return new AccionAlerta();
+    @PreAuthorize("denyAll()")
+    public AccionAlertaResponseDto findById(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected void applyRequest(AccionAlertaRequestDto request, AccionAlerta entity) {
-        entity.setAlerta(reference(Alerta.class, request.alertaId()));
-        entity.setDescripcion(request.descripcion());
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
-        entity.setRealizadaEn(request.realizadaEn());
+    @PreAuthorize("denyAll()")
+    public AccionAlertaResponseDto create(AccionAlertaRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected AccionAlertaResponseDto toResponse(AccionAlerta entity) {
-        return new AccionAlertaResponseDto(
-            entity.getId(),
-            referenceId(entity.getAlerta()),
-            entity.getDescripcion(),
-            referenceId(entity.getResponsable()),
-            entity.getRealizadaEn()
-        );
+    @PreAuthorize("denyAll()")
+    public AccionAlertaResponseDto update(UUID id, AccionAlertaRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 }
