@@ -3,13 +3,13 @@ package edu.upb.optifacotry.repository.dto.request;
 import java.util.UUID;
 
 public record MaquinaRequestDto(
+    UUID id,
     String codigo,
-    UUID lineaId,
-    UUID fuenteId,
     String nombre,
+    UUID lineaId,
     String ubicacion,
-    String caracteristicas,
-    String identificadorExterno,
-    Boolean activo
+    Boolean activo,
+    UUID fuenteId,
+    String identificadorExterno
 ) {
 }

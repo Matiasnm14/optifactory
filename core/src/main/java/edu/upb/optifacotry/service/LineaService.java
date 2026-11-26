@@ -7,6 +7,9 @@ import edu.upb.optifacotry.repository.entity.Linea;
 import edu.upb.optifacotry.repository.repos.LineaRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
+import java.util.UUID;
+
 @Service
 public class LineaService extends CrudService<Linea, LineaRequestDto, LineaResponseDto> {
 
@@ -29,6 +32,11 @@ public class LineaService extends CrudService<Linea, LineaRequestDto, LineaRespo
         entity.setPeriodoCapacidad(request.periodoCapacidad());
         entity.setDotacionMinima(request.dotacionMinima());
         entity.setActivo(request.activo());
+    }
+
+    private Linea obtenerLinea(UUID lineaId) {
+        Optional<Linea> linea = repository.findById(lineaId);
+        return linea.orElse(null);
     }
 
     @Override
