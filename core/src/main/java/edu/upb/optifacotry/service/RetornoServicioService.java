@@ -2,47 +2,74 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.RetornoServicioRequestDto;
 import edu.upb.optifacotry.repository.dto.response.RetornoServicioResponseDto;
-import edu.upb.optifacotry.repository.entity.Intervencion;
 import edu.upb.optifacotry.repository.entity.RetornoServicio;
-import edu.upb.optifacotry.repository.entity.Usuario;
 import edu.upb.optifacotry.repository.repos.RetornoServicioRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
-public class RetornoServicioService extends CrudService<RetornoServicio, RetornoServicioRequestDto, RetornoServicioResponseDto> {
+public class RetornoServicioService {
 
-    public RetornoServicioService(RetornoServicioRepository repository) {
-        super(repository);
+    private final RetornoServicioRepository repository;
+    private final PermisosService permisos;
+    private final EntidadesJpa entidades;
+
+    public RetornoServicioService(RetornoServicioRepository repository,
+                                  PermisosService permisos,
+                                  EntidadesJpa entidades) {
+        this.repository = repository;
+        this.permisos = permisos;
+        this.entidades = entidades;
     }
 
-    @Override
-    protected RetornoServicio newEntity() {
-        return new RetornoServicio();
+    @PreAuthorize("@permisosService.tieneAlgunRol('MANTENIMIENTO', 'RESPONSABLE_MANTENIMIENTO')")
+    @Transactional(readOnly = true)
+    public Page<RetornoServicioResponseDto> findAll(Pageable pageable) {
+        return repository.findAll(
+                RetornoServicioRepository.visibles(permisos.actorActual().areas()), pageable).map(this::toResponse);
     }
 
-    @Override
-    protected void applyRequest(RetornoServicioRequestDto request, RetornoServicio entity) {
-        entity.setIntervencion(reference(Intervencion.class, request.intervencionId()));
-        entity.setVerificaciones(request.verificaciones());
-        entity.setResultados(request.resultados());
-        entity.setCondicionesPendientes(request.condicionesPendientes());
-        entity.setDecision(request.decision());
-        entity.setMotivo(request.motivo());
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
-        entity.setDecididoEn(request.decididoEn());
+    @PreAuthorize("@permisosService.tieneAlgunRol('MANTENIMIENTO', 'RESPONSABLE_MANTENIMIENTO')")
+    @Transactional(readOnly = true)
+    public RetornoServicioResponseDto findById(UUID id) {
+        var filtro = RetornoServicioRepository.visibles(permisos.actorActual().areas());
+        return repository.findOne(filtro.and((raiz, consulta, criterios) -> criterios.equal(raiz.get("id"), id)))
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
     }
 
-    @Override
-    protected RetornoServicioResponseDto toResponse(RetornoServicio entity) {
+    @PreAuthorize("denyAll()")
+    public RetornoServicioResponseDto create(RetornoServicioRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public RetornoServicioResponseDto update(UUID id, RetornoServicioRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    private RetornoServicioResponseDto toResponse(RetornoServicio entity) {
         return new RetornoServicioResponseDto(
             entity.getId(),
-            referenceId(entity.getIntervencion()),
+            entidades.id(entity.getIntervencion()),
             entity.getVerificaciones(),
             entity.getResultados(),
             entity.getCondicionesPendientes(),
             entity.getDecision(),
             entity.getMotivo(),
-            referenceId(entity.getResponsable()),
+            entidades.id(entity.getResponsable()),
             entity.getDecididoEn()
         );
     }

@@ -2,37 +2,39 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.EventoConexionRequestDto;
 import edu.upb.optifacotry.repository.dto.response.EventoConexionResponseDto;
-import edu.upb.optifacotry.repository.entity.EventoConexion;
-import edu.upb.optifacotry.repository.entity.FuenteIntegracion;
-import edu.upb.optifacotry.repository.repos.EventoConexionRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class EventoConexionService extends CrudService<EventoConexion, EventoConexionRequestDto, EventoConexionResponseDto> {
+public class EventoConexionService {
 
-    public EventoConexionService(EventoConexionRepository repository) {
-        super(repository);
+    @PreAuthorize("denyAll()")
+    public Page<EventoConexionResponseDto> findAll(Pageable pageable) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected EventoConexion newEntity() {
-        return new EventoConexion();
+    @PreAuthorize("denyAll()")
+    public EventoConexionResponseDto findById(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected void applyRequest(EventoConexionRequestDto request, EventoConexion entity) {
-        entity.setFuente(reference(FuenteIntegracion.class, request.fuenteId()));
-        entity.setTipo(request.tipo());
-        entity.setOcurridoEn(request.ocurridoEn());
+    @PreAuthorize("denyAll()")
+    public EventoConexionResponseDto create(EventoConexionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected EventoConexionResponseDto toResponse(EventoConexion entity) {
-        return new EventoConexionResponseDto(
-            entity.getId(),
-            referenceId(entity.getFuente()),
-            entity.getTipo(),
-            entity.getOcurridoEn()
-        );
+    @PreAuthorize("denyAll()")
+    public EventoConexionResponseDto update(UUID id, EventoConexionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 }

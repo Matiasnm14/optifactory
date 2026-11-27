@@ -35,15 +35,24 @@ import static org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE;
 
 @RestController
 @RequestMapping("/api/v1/reportes-seguridad")
-public class ReporteSeguridadController extends ReadOnlyCrudController<ReporteSeguridadResponseDto> {
+public class ReporteSeguridadController {
 
     private final ReporteSeguridadService reportes;
     private final AdjuntoService adjuntos;
 
     public ReporteSeguridadController(ReporteSeguridadService reportes, AdjuntoService adjuntos) {
-        super(reportes);
         this.reportes = reportes;
         this.adjuntos = adjuntos;
+    }
+
+    @GetMapping
+    public PagedModel<ReporteSeguridadResponseDto> findAll(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return new PagedModel<>(reportes.findAll(pageable));
+    }
+
+    @GetMapping("/{id}")
+    public ReporteSeguridadResponseDto findById(@PathVariable UUID id) {
+        return reportes.findById(id);
     }
 
     @PostMapping(consumes = APPLICATION_JSON_VALUE)

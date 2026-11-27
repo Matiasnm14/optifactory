@@ -2,40 +2,39 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.FuenteIntegracionRequestDto;
 import edu.upb.optifacotry.repository.dto.response.FuenteIntegracionResponseDto;
-import edu.upb.optifacotry.repository.entity.FuenteIntegracion;
-import edu.upb.optifacotry.repository.repos.FuenteIntegracionRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class FuenteIntegracionService extends CrudService<FuenteIntegracion, FuenteIntegracionRequestDto, FuenteIntegracionResponseDto> {
+public class FuenteIntegracionService {
 
-    public FuenteIntegracionService(FuenteIntegracionRepository repository) {
-        super(repository);
+    @PreAuthorize("denyAll()")
+    public Page<FuenteIntegracionResponseDto> findAll(Pageable pageable) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected FuenteIntegracion newEntity() {
-        return new FuenteIntegracion();
+    @PreAuthorize("denyAll()")
+    public FuenteIntegracionResponseDto findById(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected void applyRequest(FuenteIntegracionRequestDto request, FuenteIntegracion entity) {
-        entity.setNombre(request.nombre());
-        entity.setTipo(request.tipo());
-        entity.setTiempoMaximoSilencio(request.tiempoMaximoSilencio());
-        entity.setUltimaComunicacionValida(request.ultimaComunicacionValida());
-        entity.setEstado(request.estado());
+    @PreAuthorize("denyAll()")
+    public FuenteIntegracionResponseDto create(FuenteIntegracionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected FuenteIntegracionResponseDto toResponse(FuenteIntegracion entity) {
-        return new FuenteIntegracionResponseDto(
-            entity.getId(),
-            entity.getNombre(),
-            entity.getTipo(),
-            entity.getTiempoMaximoSilencio(),
-            entity.getUltimaComunicacionValida(),
-            entity.getEstado()
-        );
+    @PreAuthorize("denyAll()")
+    public FuenteIntegracionResponseDto update(UUID id, FuenteIntegracionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 }

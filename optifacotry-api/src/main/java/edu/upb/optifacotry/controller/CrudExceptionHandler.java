@@ -10,6 +10,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -26,6 +27,11 @@ public class CrudExceptionHandler {
     @ExceptionHandler(ForbiddenOperationException.class)
     ProblemDetail forbidden(ForbiddenOperationException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, exception.getMessage());
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    ProblemDetail methodForbidden() {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "La cuenta no tiene permiso para esta operación.");
     }
 
     @ExceptionHandler(InvalidRequestException.class)

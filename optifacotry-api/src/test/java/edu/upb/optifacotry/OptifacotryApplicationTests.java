@@ -7,6 +7,7 @@ import edu.upb.optifacotry.repository.repos.MensajeRecibidoRepository;
 import edu.upb.optifacotry.repository.repos.ReporteSeguridadRepository;
 import edu.upb.optifacotry.repository.repos.RolRepository;
 import edu.upb.optifacotry.repository.repos.UsuarioRepository;
+import edu.upb.optifacotry.service.PersonaService;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,9 +16,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -39,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -92,6 +98,9 @@ class OptifacotryApplicationTests {
 	@Autowired
 	JdbcTemplate jdbc;
 
+	@Autowired
+	PersonaService personas;
+
 	private String areaPruebas;
 
 	@BeforeEach
@@ -111,6 +120,32 @@ class OptifacotryApplicationTests {
 
 	@Test
 	void contextLoads() {
+	}
+
+	@Test
+	@WithMockUser(username = "sin-cuenta-en-aplicacion", roles = "ADMIN")
+	void seguridadDeMetodoExigeCuentaYRolDePostgresql() {
+		assertThatThrownBy(() -> personas.findAll(PageRequest.of(0, 10))).isInstanceOf(AccessDeniedException.class);
+	}
+
+	@Test
+	void conservaAutenticacionBasicaYFlujoCsrf() throws Exception {
+		RequestPostProcessor admin = httpBasic("administrador", "clave-de-prueba");
+		mvc.perform(get("/api/v1/csrf").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+		var resultado = mvc.perform(get("/api/v1/csrf").with(admin)).andExpect(status().isOk()).andReturn();
+		var sesion = (MockHttpSession) resultado.getRequest().getSession(false);
+		JsonNode csrf = jsonMapper.readTree(resultado.getResponse().getContentAsString());
+		String nuevaArea = """
+				{"nombre":"Área con token CSRF","activo":true}
+				""";
+		assertThat(sesion).isNotNull();
+		mvc.perform(post("/api/v1/areas").with(admin).session(sesion)
+						.contentType(MediaType.APPLICATION_JSON).content(nuevaArea))
+				.andExpect(status().isForbidden());
+		mvc.perform(post("/api/v1/areas").with(admin).session(sesion)
+						.header(csrf.path("headerName").asText(), csrf.path("token").asText())
+						.contentType(MediaType.APPLICATION_JSON).content(nuevaArea))
+				.andExpect(status().isCreated());
 	}
 
 	@Test
@@ -183,12 +218,18 @@ class OptifacotryApplicationTests {
 		assertThat(propia.path("usuarioId").isNull()).isTrue();
 		assertThat(propia.path("areaId").asText()).isEqualTo(area);
 		String ajena = altaComo("personas", datos.formatted("PERSONA-AJENA", externa), otroPersonal).path("id").asText();
+		UUID sinArea = UUID.randomUUID();
+		jdbc.update("INSERT INTO personas (id, identificacion, nombre, activo) VALUES (?, ?, 'Sin área', true)",
+				sinArea, "LEGADO-SIN-AREA");
 		mvc.perform(get("/api/v1/personas").with(supervisor).param("size", "1"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page.totalElements").value(1))
 				.andExpect(jsonPath("$.content[0].id").value(id));
 		mvc.perform(get("/api/v1/personas/{id}", ajena).with(personal)).andExpect(status().isNotFound());
-		enviarAlta("personas", datos.formatted("NO-AUTORIZADA", area), supervisor).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/personas/{id}", sinArea).with(personal)).andExpect(status().isNotFound());
+		enviarAlta("personas", datos.formatted("NO-AUTORIZADA", area), supervisor)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.detail").value("La cuenta no tiene permiso para esta operación."));
 		mvc.perform(put("/api/v1/personas/{id}", id).with(personal).with(csrf())
 						.contentType(MediaType.APPLICATION_JSON).content(datos.formatted("PERSONA-LOCAL", externa)))
 				.andExpect(status().isForbidden());
@@ -500,6 +541,32 @@ class OptifacotryApplicationTests {
 		for (String identidad : new String[]{"sin-vinculo", "reportante-inactivo", "reportante-otra-area", "reportante-ambiguo"}) {
 			enviarAlta("reportes-seguridad", datos, user(identidad)).andExpect(status().isForbidden());
 		}
+	}
+
+	@Test
+	void filtraReportesYAdjuntosDeOtrosAutoresEnLaMismaArea() throws Exception {
+		String area = altaArea("Área compartida de reportes");
+		altaUsuario("autor-reportes", area, true);
+		altaUsuario("otro-autor-reportes", area, true);
+		RequestPostProcessor autor = user("autor-reportes");
+		RequestPostProcessor otroAutor = user("otro-autor-reportes");
+		RequestPostProcessor seguridad = usuarioDeArea("seguridad-reportes", area, "SEGURIDAD_INDUSTRIAL");
+		String datos = """
+				{"areaId":"%s","ubicacion":"Pasillo","descripcion":"Obstáculo",
+				"evidencias":[{"nombre":"Foto","archivo":"foto.jpg"}]}
+				""".formatted(area);
+		String propio = altaComo("reportes-seguridad", datos, autor).path("id").asText();
+		String ajeno = altaComo("reportes-seguridad", datos, otroAutor).path("id").asText();
+		mvc.perform(get("/api/v1/reportes-seguridad").with(autor).param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].id").value(propio));
+		mvc.perform(get("/api/v1/adjuntos").with(autor).param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].reporteSeguridadId").value(propio));
+		mvc.perform(get("/api/v1/reportes-seguridad/{id}/adjuntos", ajeno).with(autor))
+				.andExpect(status().isNotFound());
+		mvc.perform(get("/api/v1/reportes-seguridad").with(seguridad).param("size", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.page.totalElements").value(2));
 	}
 
 	@Test

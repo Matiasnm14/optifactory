@@ -2,69 +2,39 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.AlertaRequestDto;
 import edu.upb.optifacotry.repository.dto.response.AlertaResponseDto;
-import edu.upb.optifacotry.repository.entity.Alerta;
-import edu.upb.optifacotry.repository.entity.Area;
-import edu.upb.optifacotry.repository.entity.Articulo;
-import edu.upb.optifacotry.repository.entity.Linea;
-import edu.upb.optifacotry.repository.entity.Lote;
-import edu.upb.optifacotry.repository.entity.Maquina;
-import edu.upb.optifacotry.repository.entity.OrdenProduccion;
-import edu.upb.optifacotry.repository.entity.Usuario;
-import edu.upb.optifacotry.repository.repos.AlertaRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class AlertaService extends CrudService<Alerta, AlertaRequestDto, AlertaResponseDto> {
+public class AlertaService {
 
-    public AlertaService(AlertaRepository repository) {
-        super(repository);
+    @PreAuthorize("denyAll()")
+    public Page<AlertaResponseDto> findAll(Pageable pageable) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected Alerta newEntity() {
-        return new Alerta();
+    @PreAuthorize("denyAll()")
+    public AlertaResponseDto findById(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected void applyRequest(AlertaRequestDto request, Alerta entity) {
-        entity.setArea(reference(Area.class, request.areaId()));
-        entity.setOrigen(request.origen());
-        entity.setMaquina(reference(Maquina.class, request.maquinaId()));
-        entity.setLinea(reference(Linea.class, request.lineaId()));
-        entity.setOrden(reference(OrdenProduccion.class, request.ordenId()));
-        entity.setArticulo(reference(Articulo.class, request.articuloId()));
-        entity.setLote(reference(Lote.class, request.loteId()));
-        entity.setDetalle(request.detalle());
-        entity.setGravedad(request.gravedad());
-        entity.setEstado(request.estado());
-        entity.setCreadaEn(request.creadaEn());
-        entity.setReconocidoPor(reference(Usuario.class, request.reconocidoPor()));
-        entity.setReconocidoEn(request.reconocidoEn());
-        entity.setCerradoPor(reference(Usuario.class, request.cerradoPor()));
-        entity.setCerradoEn(request.cerradoEn());
-        entity.setResultadoCierre(request.resultadoCierre());
+    @PreAuthorize("denyAll()")
+    public AlertaResponseDto create(AlertaRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 
-    @Override
-    protected AlertaResponseDto toResponse(Alerta entity) {
-        return new AlertaResponseDto(
-            entity.getId(),
-            referenceId(entity.getArea()),
-            entity.getOrigen(),
-            referenceId(entity.getMaquina()),
-            referenceId(entity.getLinea()),
-            referenceId(entity.getOrden()),
-            referenceId(entity.getArticulo()),
-            referenceId(entity.getLote()),
-            entity.getDetalle(),
-            entity.getGravedad(),
-            entity.getEstado(),
-            entity.getCreadaEn(),
-            referenceId(entity.getReconocidoPor()),
-            entity.getReconocidoEn(),
-            referenceId(entity.getCerradoPor()),
-            entity.getCerradoEn(),
-            entity.getResultadoCierre()
-        );
+    @PreAuthorize("denyAll()")
+    public AlertaResponseDto update(UUID id, AlertaRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
     }
 }

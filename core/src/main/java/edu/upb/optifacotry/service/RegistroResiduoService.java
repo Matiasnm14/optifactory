@@ -8,6 +8,7 @@ import edu.upb.optifacotry.repository.entity.Area;
 import edu.upb.optifacotry.repository.entity.RegistroResiduo;
 import edu.upb.optifacotry.repository.entity.SeguimientoResiduo;
 import edu.upb.optifacotry.repository.entity.TipoResiduo;
+import edu.upb.optifacotry.repository.entity.Usuario;
 import edu.upb.optifacotry.repository.repos.RegistroResiduoRepository;
 import edu.upb.optifacotry.repository.repos.SeguimientoResiduoRepository;
 import edu.upb.optifacotry.repository.repos.TipoResiduoRepository;
@@ -17,6 +18,7 @@ import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,32 +28,99 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import static edu.upb.optifacotry.repository.dto.request.SeguimientoResiduoRequestDto.Etapa.DESTINO_FINAL;
 import static edu.upb.optifacotry.repository.dto.request.SeguimientoResiduoRequestDto.Etapa.TRASLADO;
-import static edu.upb.optifacotry.service.AccionPermiso.CONSULTAR;
-import static edu.upb.optifacotry.service.AccionPermiso.MODIFICAR;
 
 @Service
-public class RegistroResiduoService extends CrudService<RegistroResiduo, RegistroResiduoRequestDto, RegistroResiduoResponseDto> {
+public class RegistroResiduoService {
 
     private final TipoResiduoRepository tipos;
     private final SeguimientoResiduoRepository seguimientos;
+    private final RegistroResiduoRepository repository;
+    private final PermisosService permisos;
+    private final EntidadesJpa entidades;
 
-    public RegistroResiduoService(RegistroResiduoRepository repository, TipoResiduoRepository tipos,
-                                  SeguimientoResiduoRepository seguimientos) {
-        super(repository);
+    public RegistroResiduoService(RegistroResiduoRepository repository,
+                                  TipoResiduoRepository tipos,
+                                  SeguimientoResiduoRepository seguimientos,
+                                  PermisosService permisos,
+                                  EntidadesJpa entidades) {
+        this.repository = repository;
         this.tipos = tipos;
         this.seguimientos = seguimientos;
+        this.permisos = permisos;
+        this.entidades = entidades;
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
+    public Page<RegistroResiduoResponseDto> findAll(Pageable pageable) {
+        return repository.findAll(
+                RegistroResiduoRepository.visibles(permisos.actorActual().areas()), pageable).map(this::toResponse);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
+    public RegistroResiduoResponseDto findById(UUID id) {
+        var filtro = RegistroResiduoRepository.visibles(permisos.actorActual().areas());
+        return repository.findOne(filtro.and((raiz, consulta, criterios) -> criterios.equal(raiz.get("id"), id)))
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public RegistroResiduoResponseDto create(RegistroResiduoRequestDto request) {
+        var actor = permisos.actorActual();
+        RegistroResiduo entidad = new RegistroResiduo();
+        applyRequest(request, entidad);
+        verificarAreas(entidad, actor.areas());
+        completarEscritura(request, entidad, actor);
+        var guardada = repository.saveAndFlush(entidad);
+        entidades.refrescar(guardada);
+        return toResponse(guardada);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public RegistroResiduoResponseDto update(UUID id, RegistroResiduoRequestDto request) {
+        var actor = permisos.actorActual();
+        RegistroResiduo entidad = entidades.bloquear(RegistroResiduo.class, id);
+        verificarAreas(entidad, actor.areas());
+        applyRequest(request, entidad);
+        verificarAreas(entidad, actor.areas());
+        completarEscritura(request, entidad, actor);
+        repository.flush();
+        entidades.refrescar(entidad);
+        return toResponse(entidad);
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional
+    public void delete(UUID id) {
+        var actor = permisos.actorActual();
+        RegistroResiduo entidad = entidades.bloquear(RegistroResiduo.class, id);
+        verificarAreas(entidad, actor.areas());
+        repository.delete(entidad);
+        repository.flush();
+    }
+
+    private void verificarAreas(RegistroResiduo entidad, Set<UUID> areas) {
+        AmbitoAreas.verificar(areas, () -> {
+            var area = entidad.getArea();
+            return AmbitoAreas.presentes(entidades.id(area));
+        });
+    }
+
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
     @Transactional
     public SeguimientoResiduoResponseDto registrarSeguimiento(UUID registroId, SeguimientoResiduoRequestDto request) {
-        PermisosService.Actor actor = actorActual();
-        AlcancePermiso permiso = acceso(MODIFICAR, actor);
-        RegistroResiduo registro = findEntityForUpdate(registroId);
-        permiso.verificar(registro);
+        var actor = permisos.actorActual();
+        RegistroResiduo registro = entidades.bloquear(RegistroResiduo.class, registroId);
+        verificarAreas(registro, actor.areas());
 
         if (registro.getDestinoFinal() != null && !registro.getDestinoFinal().isBlank() && registro.getFechaDestino() != null) {
             throw new ConflictException("El residuo ya tiene un destino final.");
@@ -75,7 +144,7 @@ public class RegistroResiduoService extends CrudService<RegistroResiduo, Registr
         seguimiento.setUbicacion(request.ubicacion().strip());
         seguimiento.setOcurridoEn(ocurridoEn);
         seguimiento.setRegistradoEn(Instant.now().truncatedTo(ChronoUnit.MICROS));
-        seguimiento.setResponsable(actor.usuario());
+        seguimiento.setResponsable(entidades.referencia(Usuario.class, actor.usuarioId()));
         if (request.etapa() == DESTINO_FINAL) {
             registro.setDestinoFinal(seguimiento.getUbicacion());
             registro.setFechaDestino(ocurridoEn.atOffset(ZoneOffset.UTC).toLocalDate());
@@ -83,19 +152,25 @@ public class RegistroResiduoService extends CrudService<RegistroResiduo, Registr
         return toResponse(seguimientos.saveAndFlush(seguimiento));
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
     public Page<SeguimientoResiduoResponseDto> consultarSeguimiento(UUID registroId, Pageable pageable) {
-        AlcancePermiso permiso = acceso(CONSULTAR);
-        permiso.verificar(findEntity(registroId));
-        return seguimientos.findByRegistro_IdAndRegistro_Area_IdIn(registroId, permiso.areas(), pageable)
+        var actor = permisos.actorActual();
+        var registro = repository.findById(registroId)
+                .orElseThrow(() -> new ResourceNotFoundException(registroId));
+        verificarAreas(registro, actor.areas());
+        return seguimientos.findByRegistro_IdAndRegistro_Area_IdIn(registroId, actor.areas(), pageable)
                 .map(this::toResponse);
     }
 
+    @PreAuthorize("@permisosService.tieneAlgunRol('AMBIENTE')")
+    @Transactional(readOnly = true)
     public Page<RegistroResiduoResponseDto> consultar(
             UUID tipoId, UUID areaId, Instant desde, Instant hasta, Pageable pageable) {
         IntervaloConsulta intervalo = new IntervaloConsulta(desde, hasta);
         Instant inicio = intervalo.desdeInclusivo();
         Instant fin = intervalo.hastaExclusivo();
-        return listar((raiz, consulta, criterios) -> {
+        var filtro = RegistroResiduoRepository.visibles(permisos.actorActual().areas()).and((raiz, consulta, criterios) -> {
             List<Predicate> filtros = new ArrayList<>();
             if (tipoId != null) {
                 filtros.add(criterios.equal(raiz.get("tipo").get("id"), tipoId));
@@ -110,44 +185,39 @@ public class RegistroResiduoService extends CrudService<RegistroResiduo, Registr
                 filtros.add(criterios.lessThan(raiz.get("generadoEn"), fin));
             }
             return criterios.and(filtros);
-        }, pageable);
+        });
+        return repository.findAll(filtro, pageable).map(this::toResponse);
     }
 
     private SeguimientoResiduoResponseDto toResponse(SeguimientoResiduo seguimiento) {
         return new SeguimientoResiduoResponseDto(
-                seguimiento.getId(), referenceId(seguimiento.getRegistro()), seguimiento.getEtapa(),
+                seguimiento.getId(), entidades.id(seguimiento.getRegistro()), seguimiento.getEtapa(),
                 seguimiento.getOrigen(), seguimiento.getUbicacion(), seguimiento.getOcurridoEn(),
-                seguimiento.getRegistradoEn(), referenceId(seguimiento.getResponsable()));
+                seguimiento.getRegistradoEn(), entidades.id(seguimiento.getResponsable()));
     }
 
-    @Override
-    protected RegistroResiduo newEntity() {
-        return new RegistroResiduo();
-    }
 
-    @Override
-    protected void applyRequest(RegistroResiduoRequestDto request, RegistroResiduo entity) {
+    private void applyRequest(RegistroResiduoRequestDto request, RegistroResiduo entity) {
         Instant generadoEn = request.generadoEn().truncatedTo(ChronoUnit.MICROS);
         String unidad = request.unidad().strip();
         String tipoDato = request.tipoDato() == null ? null : TipoDatoAmbiental.normalizar(request.tipoDato());
         if (entity.getId() != null && (entity.getDestinoFinal() != null || entity.getFechaDestino() != null
                 || seguimientos.existsByRegistro_Id(entity.getId())) && (
-                !request.tipoId().equals(referenceId(entity.getTipo()))
-                        || !request.areaId().equals(referenceId(entity.getArea()))
+                !request.tipoId().equals(entidades.id(entity.getTipo()))
+                        || !request.areaId().equals(entidades.id(entity.getArea()))
                         || entity.getCantidad() == null || request.cantidad().compareTo(entity.getCantidad()) != 0
                         || !unidad.equals(entity.getUnidad()) || !generadoEn.equals(entity.getGeneradoEn())
                         || !Objects.equals(tipoDato, entity.getTipoDato()))) {
             throw new ConflictException("La generación del residuo se conserva cuando existe seguimiento.");
         }
-        entity.setArea(reference(Area.class, request.areaId()));
+        entity.setArea(entidades.referencia(Area.class, request.areaId()));
         entity.setCantidad(request.cantidad());
         entity.setUnidad(unidad);
         entity.setGeneradoEn(generadoEn);
         entity.setTipoDato(tipoDato);
     }
 
-    @Override
-    protected void completarEscritura(RegistroResiduoRequestDto request, RegistroResiduo entity,
+    private void completarEscritura(RegistroResiduoRequestDto request, RegistroResiduo entity,
                                       PermisosService.Actor actor) {
         TipoResiduo tipo = tipos.findLockedById(request.tipoId())
                 .orElseThrow(() -> new ResourceNotFoundException(request.tipoId()));
@@ -159,23 +229,22 @@ public class RegistroResiduoService extends CrudService<RegistroResiduo, Registr
         }
         entity.setTipo(tipo);
         if (entity.getId() == null) {
-            entity.setResponsable(actor.usuario());
+            entity.setResponsable(entidades.referencia(Usuario.class, actor.usuarioId()));
         }
     }
 
-    @Override
-    protected RegistroResiduoResponseDto toResponse(RegistroResiduo entity) {
+    private RegistroResiduoResponseDto toResponse(RegistroResiduo entity) {
         return new RegistroResiduoResponseDto(
             entity.getId(),
-            referenceId(entity.getTipo()),
-            referenceId(entity.getArea()),
+            entidades.id(entity.getTipo()),
+            entidades.id(entity.getArea()),
             entity.getCantidad(),
             entity.getUnidad(),
             entity.getGeneradoEn(),
             entity.getTipoDato(),
             entity.getDestinoFinal(),
             entity.getFechaDestino(),
-            referenceId(entity.getResponsable())
+            entidades.id(entity.getResponsable())
         );
     }
 }

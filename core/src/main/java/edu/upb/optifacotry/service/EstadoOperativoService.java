@@ -3,47 +3,72 @@ package edu.upb.optifacotry.service;
 import edu.upb.optifacotry.repository.dto.request.EstadoOperativoRequestDto;
 import edu.upb.optifacotry.repository.dto.response.EstadoOperativoResponseDto;
 import edu.upb.optifacotry.repository.entity.EstadoOperativo;
-import edu.upb.optifacotry.repository.entity.Linea;
-import edu.upb.optifacotry.repository.entity.Maquina;
-import edu.upb.optifacotry.repository.entity.MensajeRecibido;
-import edu.upb.optifacotry.repository.entity.Usuario;
 import edu.upb.optifacotry.repository.repos.EstadoOperativoRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
-public class EstadoOperativoService extends CrudService<EstadoOperativo, EstadoOperativoRequestDto, EstadoOperativoResponseDto> {
+public class EstadoOperativoService {
 
-    public EstadoOperativoService(EstadoOperativoRepository repository) {
-        super(repository);
+    private final EstadoOperativoRepository repository;
+    private final PermisosService permisos;
+    private final EntidadesJpa entidades;
+
+    public EstadoOperativoService(EstadoOperativoRepository repository,
+                                  PermisosService permisos,
+                                  EntidadesJpa entidades) {
+        this.repository = repository;
+        this.permisos = permisos;
+        this.entidades = entidades;
     }
 
-    @Override
-    protected EstadoOperativo newEntity() {
-        return new EstadoOperativo();
+    @PreAuthorize("@permisosService.tieneAlgunRol('MANTENIMIENTO', 'RESPONSABLE_MANTENIMIENTO')")
+    @Transactional(readOnly = true)
+    public Page<EstadoOperativoResponseDto> findAll(Pageable pageable) {
+        return repository.findAll(
+                EstadoOperativoRepository.visibles(permisos.actorActual().areas()), pageable).map(this::toResponse);
     }
 
-    @Override
-    protected void applyRequest(EstadoOperativoRequestDto request, EstadoOperativo entity) {
-        entity.setLinea(reference(Linea.class, request.lineaId()));
-        entity.setMaquina(reference(Maquina.class, request.maquinaId()));
-        entity.setEstado(request.estado());
-        entity.setTipoFuente(request.tipoFuente());
-        entity.setMensaje(reference(MensajeRecibido.class, request.mensajeId()));
-        entity.setResponsable(reference(Usuario.class, request.responsableId()));
-        entity.setOrigenEn(request.origenEn());
-        entity.setRecibidoEn(request.recibidoEn());
+    @PreAuthorize("@permisosService.tieneAlgunRol('MANTENIMIENTO', 'RESPONSABLE_MANTENIMIENTO')")
+    @Transactional(readOnly = true)
+    public EstadoOperativoResponseDto findById(UUID id) {
+        var filtro = EstadoOperativoRepository.visibles(permisos.actorActual().areas());
+        return repository.findOne(filtro.and((raiz, consulta, criterios) -> criterios.equal(raiz.get("id"), id)))
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
     }
 
-    @Override
-    protected EstadoOperativoResponseDto toResponse(EstadoOperativo entity) {
+    @PreAuthorize("denyAll()")
+    public EstadoOperativoResponseDto create(EstadoOperativoRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public EstadoOperativoResponseDto update(UUID id, EstadoOperativoRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    private EstadoOperativoResponseDto toResponse(EstadoOperativo entity) {
         return new EstadoOperativoResponseDto(
             entity.getId(),
-            referenceId(entity.getLinea()),
-            referenceId(entity.getMaquina()),
+            entidades.id(entity.getLinea()),
+            entidades.id(entity.getMaquina()),
             entity.getEstado(),
             entity.getTipoFuente(),
-            referenceId(entity.getMensaje()),
-            referenceId(entity.getResponsable()),
+            entidades.id(entity.getMensaje()),
+            entidades.id(entity.getResponsable()),
             entity.getOrigenEn(),
             entity.getRecibidoEn()
         );

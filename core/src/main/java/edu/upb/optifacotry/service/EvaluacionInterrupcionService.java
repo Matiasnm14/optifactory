@@ -2,53 +2,76 @@ package edu.upb.optifacotry.service;
 
 import edu.upb.optifacotry.repository.dto.request.EvaluacionInterrupcionRequestDto;
 import edu.upb.optifacotry.repository.dto.response.EvaluacionInterrupcionResponseDto;
-import edu.upb.optifacotry.repository.entity.Alternativa;
 import edu.upb.optifacotry.repository.entity.EvaluacionInterrupcion;
-import edu.upb.optifacotry.repository.entity.OrdenProduccion;
-import edu.upb.optifacotry.repository.entity.Parada;
-import edu.upb.optifacotry.repository.entity.Usuario;
 import edu.upb.optifacotry.repository.repos.EvaluacionInterrupcionRepository;
+import edu.upb.optifacotry.service.exception.ForbiddenOperationException;
+import edu.upb.optifacotry.service.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
-public class EvaluacionInterrupcionService extends CrudService<EvaluacionInterrupcion, EvaluacionInterrupcionRequestDto, EvaluacionInterrupcionResponseDto> {
+public class EvaluacionInterrupcionService {
 
-    public EvaluacionInterrupcionService(EvaluacionInterrupcionRepository repository) {
-        super(repository);
+    private final EvaluacionInterrupcionRepository repository;
+    private final PermisosService permisos;
+    private final EntidadesJpa entidades;
+
+    public EvaluacionInterrupcionService(EvaluacionInterrupcionRepository repository,
+                                         PermisosService permisos,
+                                         EntidadesJpa entidades) {
+        this.repository = repository;
+        this.permisos = permisos;
+        this.entidades = entidades;
     }
 
-    @Override
-    protected EvaluacionInterrupcion newEntity() {
-        return new EvaluacionInterrupcion();
+    @PreAuthorize("@permisosService.tieneAlgunRol('SUPERVISION_PRODUCCION')")
+    @Transactional(readOnly = true)
+    public Page<EvaluacionInterrupcionResponseDto> findAll(Pageable pageable) {
+        return repository.findAll(
+                EvaluacionInterrupcionRepository.visibles(permisos.actorActual().areas()), pageable).map(this::toResponse);
     }
 
-    @Override
-    protected void applyRequest(EvaluacionInterrupcionRequestDto request, EvaluacionInterrupcion entity) {
-        entity.setOrden(reference(OrdenProduccion.class, request.ordenId()));
-        entity.setParada(reference(Parada.class, request.paradaId()));
-        entity.setOrigen(request.origen());
-        entity.setCantidadPendiente(request.cantidadPendiente());
-        entity.setEvaluadaEn(request.evaluadaEn());
-        entity.setAutor(reference(Usuario.class, request.autorId()));
-        entity.setAlternativaElegida(reference(Alternativa.class, request.alternativaElegidaId()));
-        entity.setJustificacion(request.justificacion());
-        entity.setAprobadoPor(reference(Usuario.class, request.aprobadoPor()));
-        entity.setAprobadoEn(request.aprobadoEn());
+    @PreAuthorize("@permisosService.tieneAlgunRol('SUPERVISION_PRODUCCION')")
+    @Transactional(readOnly = true)
+    public EvaluacionInterrupcionResponseDto findById(UUID id) {
+        var filtro = EvaluacionInterrupcionRepository.visibles(permisos.actorActual().areas());
+        return repository.findOne(filtro.and((raiz, consulta, criterios) -> criterios.equal(raiz.get("id"), id)))
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(id));
     }
 
-    @Override
-    protected EvaluacionInterrupcionResponseDto toResponse(EvaluacionInterrupcion entity) {
+    @PreAuthorize("denyAll()")
+    public EvaluacionInterrupcionResponseDto create(EvaluacionInterrupcionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public EvaluacionInterrupcionResponseDto update(UUID id, EvaluacionInterrupcionRequestDto request) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    @PreAuthorize("denyAll()")
+    public void delete(UUID id) {
+        throw new ForbiddenOperationException("La cuenta no tiene permiso para esta operación.");
+    }
+
+    private EvaluacionInterrupcionResponseDto toResponse(EvaluacionInterrupcion entity) {
         return new EvaluacionInterrupcionResponseDto(
             entity.getId(),
-            referenceId(entity.getOrden()),
-            referenceId(entity.getParada()),
+            entidades.id(entity.getOrden()),
+            entidades.id(entity.getParada()),
             entity.getOrigen(),
             entity.getCantidadPendiente(),
             entity.getEvaluadaEn(),
-            referenceId(entity.getAutor()),
-            referenceId(entity.getAlternativaElegida()),
+            entidades.id(entity.getAutor()),
+            entidades.id(entity.getAlternativaElegida()),
             entity.getJustificacion(),
-            referenceId(entity.getAprobadoPor()),
+            entidades.id(entity.getAprobadoPor()),
             entity.getAprobadoEn()
         );
     }
